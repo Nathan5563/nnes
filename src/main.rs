@@ -154,6 +154,16 @@ impl CPU
         }
     }
 
+    pub fn reset(&mut self)
+    {
+        self.program_counter = 0;
+        self.stack_pointer = 0;
+        self.reg_accumulator = 0;
+        self.reg_xindex = 0;
+        self.reg_yindex = 0;
+        self.flags = 0;
+    }
+
     pub fn print_cpu(&self)
     {
         println!("Program Counter: {:04X}", self.program_counter);
@@ -164,30 +174,54 @@ impl CPU
         println!("Flags: {:08b}", self.flags);
     }
 
+    fn update_nz_flags(&mut self, res: u8)
+    {
+        if res == 0 { self.set_flag(Flag::Zero, true); }
+        else { self.set_flag(Flag::Zero, false); }
+
+        if res & NEGATIVE_BIT != 0 { self.set_flag(Flag::Negative, true); }
+        else { self.set_flag(Flag::Negative, false); }
+    }
+
+    fn handle_brk(&mut self)
+    {
+        self.set_flag(Flag::Break, true);
+    }
+
+    fn handle_lda(&mut self, program: &Vec<u8>)
+    {
+        let param: u8 = program[self.program_counter as usize];
+        self.program_counter += 1;
+        self.reg_accumulator = param;
+        self.update_nz_flags(self.reg_accumulator);        
+    }
+
+    fn handle_tax(&mut self)
+    {
+        self.reg_xindex = self.reg_accumulator;
+        self.update_nz_flags(self.reg_xindex);
+    }
+
+    fn handle_inx(&mut self)
+    {
+        if self.reg_xindex == 255 { self.reg_xindex = 0; }
+        else { self.reg_xindex += 1; }
+        self.update_nz_flags(self.reg_xindex);
+    }
+
     pub fn interpret(&mut self, program: Vec<u8>)
     {
-        loop 
+        while !self.get_flag(Flag::Break)
         {
             let opcode: u8 = program[self.program_counter as usize];
             self.program_counter += 1;
 
             match opcode
             {
-                0xA9 => {
-                    let param: u8 = program[self.program_counter as usize];
-                    self.program_counter += 1;
-                    self.reg_accumulator = param;
-
-                    if self.reg_accumulator == 0 { self.set_flag(Flag::Zero, true); }
-                    else { self.set_flag(Flag::Zero, false); }
-
-                    if self.reg_accumulator & NEGATIVE_BIT != 0 { self.set_flag(Flag::Negative, true); }
-                    else { self.set_flag(Flag::Negative, false); }
-                }
-                0x00 => {
-                    self.set_flag(Flag::Break, true);
-                    break;
-                }
+                0x00 => { self.handle_brk(); }
+                0xa9 => { self.handle_lda(&program); }
+                0xaa => { self.handle_tax(); }
+                0xe8 => { self.handle_inx(); }
                 _ => {}
             }
         }
@@ -203,25 +237,125 @@ fn main()
 mod test {
    use super::*;
  
-   #[test]
-   fn t0xa9_lda_load_accumulator() {
-       let mut cpu = CPU::new();
+    #[test]
+    fn t0x00_brk() 
+    {
+        let mut cpu: CPU = CPU::new();
+        cpu.interpret(vec![0x00]);
+        assert!(cpu.get_flag(Flag::Break) == true);
+    }
+
+    #[test]
+    fn t0xa9_lda_immediate() 
+    {
+       let mut cpu: CPU = CPU::new();
        cpu.interpret(vec![0xa9, 0x05, 0x00]);
        assert!(cpu.get_register(Register::ACCUMULATOR) == 0x05);
        assert!(cpu.get_flag(Flag::Zero) == false);
        assert!(cpu.get_flag(Flag::Negative) == false);
    }
-
     #[test]
-    fn t0xa9_lda_zero_flag() {
-        let mut cpu = CPU::new();
+    fn t0xa9_lda_zero_flag() 
+    {
+        let mut cpu: CPU = CPU::new();
         cpu.interpret(vec![0xa9, 0x00, 0x00]);
         assert!(cpu.get_flag(Flag::Zero) == true);
+        cpu.reset();
+        cpu.interpret(vec![0xa9, 0x80, 0x00]);
+        assert!(cpu.get_flag(Flag::Zero) == false);
     }
     #[test]
-    fn t0xa9_lda_negative_flag() {
-        let mut cpu = CPU::new();
+    fn t0xa9_lda_negative_flag() 
+    {
+        let mut cpu: CPU = CPU::new();
         cpu.interpret(vec![0xa9, 0x80, 0x00]);
         assert!(cpu.get_flag(Flag::Negative) == true);
+        cpu.reset();
+        cpu.interpret(vec![0xa9, 0x7F, 0x00]);
+        assert!(cpu.get_flag(Flag::Negative) == false);
     }
+
+    #[test]
+    fn t0xaa_tax_implied() 
+    {
+        let mut cpu: CPU = CPU::new();
+        cpu.set_register(Register::ACCUMULATOR, 10);
+        cpu.interpret(vec![0xaa, 0x00]);
+        assert!(cpu.get_register(Register::XIndex) == 10);
+   }
+    #[test]
+    fn t0xaa_tax_zero_flag() 
+    {
+        let mut cpu: CPU = CPU::new();
+        cpu.set_register(Register::ACCUMULATOR, 0);
+        cpu.interpret(vec![0xaa, 0x00]);
+        assert!(cpu.get_flag(Flag::Zero) == true);
+        cpu.reset();
+        cpu.set_register(Register::ACCUMULATOR, 128);
+        cpu.interpret(vec![0xaa, 0x00]);
+        assert!(cpu.get_flag(Flag::Zero) == false);
+    }
+    #[test]
+    fn t0xaa_tax_negative_flag() 
+    {
+        let mut cpu: CPU = CPU::new();
+        cpu.set_register(Register::ACCUMULATOR, 128);
+        cpu.interpret(vec![0xaa, 0x00]);
+        assert!(cpu.get_flag(Flag::Negative) == true);
+        cpu.reset();
+        cpu.set_register(Register::ACCUMULATOR, 127);
+        cpu.interpret(vec![0xaa, 0x00]);
+        assert!(cpu.get_flag(Flag::Negative) == false);
+    }
+
+    #[test]
+    fn t0xe8_inx_implied()
+    {
+        let mut cpu: CPU = CPU::new();
+        cpu.set_register(Register::XIndex, 10);
+        cpu.interpret(vec![0xe8, 0x00]);
+        assert!(cpu.get_register(Register::XIndex) == 11);
+    }
+    #[test]
+    fn t0xe8_inx_overflow()
+    {
+        let mut cpu: CPU = CPU::new();
+        cpu.set_register(Register::XIndex, 0xfe);
+        cpu.interpret(vec![0xe8, 0x00]);
+        assert!(cpu.get_flag(Flag::Negative) == true);
+        cpu.reset();
+        cpu.set_register(Register::XIndex, 0xff);
+        cpu.interpret(vec![0xe8, 0x00]);
+        assert!(cpu.get_register(Register::XIndex) == 0);
+        assert!(cpu.get_flag(Flag::Zero) == true);
+        assert!(cpu.get_flag(Flag::Negative) == false);
+        cpu.reset();
+        cpu.set_register(Register::XIndex, 0xff);
+        cpu.interpret(vec![0xe8, 0xe8, 0x00]);
+        assert!(cpu.get_register(Register::XIndex) == 1);
+        assert!(cpu.get_flag(Flag::Zero) == false);
+        assert!(cpu.get_flag(Flag::Negative) == false);
+    }
+    fn t0xe8_inx_negative_flag()
+    {
+        let mut cpu: CPU = CPU::new();
+        cpu.set_register(Register::XIndex, 127);
+        cpu.interpret(vec![0xe8, 0x00]);
+        assert!(cpu.get_flag(Flag::Negative) == true);
+        cpu.reset();
+        cpu.set_register(Register::XIndex, 126);
+        cpu.interpret(vec![0xe8, 0x00]);
+        assert!(cpu.get_flag(Flag::Negative) == false);
+    }
+
+    #[test]
+    fn t0xa9_immediate_t0xaa_implied_t0xe8_implied_t0x00() 
+    {
+       let mut cpu: CPU = CPU::new();
+       cpu.interpret(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
+       assert!(cpu.get_register(Register::XIndex) == 0xc1);
+       assert!(cpu.get_flag(Flag::Zero) == false);
+       assert!(cpu.get_flag(Flag::Negative) == true);
+   }
+
 }
