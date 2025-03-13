@@ -1,5 +1,12 @@
 use crate::nnes::*;
 
+pub enum Register
+{
+    ACCUMULATOR,
+    XIndex,
+    YIndex,
+}
+
 impl NNES
 {
     pub fn get_program_counter(&self) -> u16

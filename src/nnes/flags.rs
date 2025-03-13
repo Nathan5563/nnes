@@ -1,5 +1,16 @@
 use crate::nnes::*;
 
+pub enum Flag
+{
+    Carry,
+    Zero,
+    InterruptDisable,
+    DecimalMode,
+    Break,
+    Overflow,
+    Negative,
+}
+
 pub static CF: u8 = 0b00000001;
 pub static NEG_CF: u8 = 0b11111110;
 pub static ZF: u8 = 0b00000010;

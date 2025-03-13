@@ -1,40 +1,20 @@
+// Make only the enums and utilities public to main.rs
+pub use registers::Register;
+pub use flags::Flag;
+pub use interrupts::Interrupt;
+pub mod utils;
+
 mod registers;
 mod flags;
 mod interrupts;
 mod memory;
 mod opcodes;
-pub mod utils;
 
 use flags::*;
 use registers::*;
 use interrupts::*;
 use memory::*;
 use opcodes::*;
-
-pub enum Register
-{
-    ACCUMULATOR,
-    XIndex,
-    YIndex,
-}
-
-pub enum Flag
-{
-    Carry,
-    Zero,
-    InterruptDisable,
-    DecimalMode,
-    Break,
-    Overflow,
-    Negative,
-}
-
-pub enum Interrupt
-{
-    Reset,
-    NMI,
-    IRQ,
-}
 
 pub struct NNES
 {
