@@ -1,4 +1,4 @@
-use crate::nnes::*;
+use crate::nnes::NNES;
 
 pub enum Register
 {
@@ -47,5 +47,12 @@ impl NNES
             Register::XIndex => { self.reg_xindex = value; }
             Register::YIndex => { self.reg_yindex = value; }
         }
+    }
+
+    pub fn reset_registers(&mut self)
+    {
+        self.reg_accumulator = 0;
+        self.reg_xindex = 0;
+        self.reg_yindex = 0;
     }
 }

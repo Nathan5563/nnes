@@ -1,4 +1,4 @@
-use crate::nnes::*;
+use crate::nnes::NNES;
 
 pub enum Flag
 {
@@ -40,6 +40,11 @@ impl NNES
             Flag::Overflow => { (self.flags & VF) != 0 }
             Flag::Negative => { (self.flags & NF) != 0 }
         }
+    }
+
+    pub fn get_flags(&self) -> u8
+    {
+        self.flags
     }
 
     pub fn set_flag(&mut self, flag: Flag, status: bool)
@@ -84,5 +89,10 @@ impl NNES
 
         if res & NF != 0 { self.set_flag(Flag::Negative, true); }
         else { self.set_flag(Flag::Negative, false); }
+    }
+
+    pub fn reset_flags(&mut self)
+    {
+        self.flags = 0;
     }
 }

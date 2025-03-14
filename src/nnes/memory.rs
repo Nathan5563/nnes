@@ -1,4 +1,16 @@
-use crate::nnes::*;
+use crate::nnes::NNES;
+
+pub enum AddressingMode {
+    Implied,
+    Immediate,
+    ZeroPage,
+    ZeroPageX,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    IndirectX,
+    IndirectY,
+}
 
 impl NNES
 {
@@ -12,10 +24,8 @@ impl NNES
         self.memory[addr as usize] = data;
     }
 
-    pub fn load(&mut self, program: Vec<u8>)
+    pub fn reset_memory(&mut self)
     {
-        self.memory[0x8000 .. (0x8000 + program.len())]
-            .copy_from_slice(&program[..]);
-        self.program_counter = 0x8000;
+        self.memory = [0; 0xffff];
     }
 }

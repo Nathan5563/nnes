@@ -1,25 +1,23 @@
-use crate::nnes::*;
+use crate::nnes::{NNES, Register};
 
 impl NNES
 {
-    pub fn reset(&mut self)
+    pub fn reset_nnes(&mut self)
     {
-        self.program_counter = 0;
-        self.stack_pointer = 0;
-        self.reg_accumulator = 0;
-        self.reg_xindex = 0;
-        self.reg_yindex = 0;
-        self.flags = 0;
-        self.memory = [0; 0xffff];
+        self.set_program_counter(0);
+        self.set_stack_pointer(0);
+        self.reset_registers();
+        self.reset_flags();
+        self.reset_memory();
     }
 
     pub fn print_nnes(&self)
     {
-        println!("Program Counter: {:04X}", self.program_counter);
-        println!("Stack Pointer: {:02X}", self.stack_pointer);
-        println!("Accumulator: {:02X}", self.reg_accumulator);
-        println!("X Index: {:02X}", self.reg_xindex);
-        println!("Y Index: {:02X}", self.reg_yindex);
-        println!("Flags: {:08b}", self.flags);
+        println!("Program Counter: {:04X}", self.get_program_counter());
+        println!("Stack Pointer: {:02X}", self.get_stack_pointer());
+        println!("Accumulator: {:02X}", self.get_register(Register::ACCUMULATOR));
+        println!("X Index: {:02X}", self.get_register(Register::XIndex));
+        println!("Y Index: {:02X}", self.get_register(Register::YIndex));
+        println!("Flags: {:08b}", self.get_flags());
     }
 }
