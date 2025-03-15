@@ -14,17 +14,11 @@ fn main() {}
 mod test {
     use super::*;
 
-    // Helper: Calls run() after load and any memory setup.
-    fn run_program(nnes: &mut NNES, program: Vec<u8>) {
-        nnes.load(program);
-        nnes.run();
-    }
-
     #[test]
     fn test_lda_immediate() {
         let mut nnes = NNES::new();
         // Program: LDA immediate (0xa9), operand, then BRK.
-        run_program(&mut nnes, vec![0xa9, 0x42, 0x00]);
+        nnes.play_test(vec![0xa9, 0x42, 0x00]);
         assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0x42);
     }
 
@@ -129,7 +123,7 @@ mod test {
     fn test_brk() {
         let mut nnes = NNES::new();
         // Program: Only BRK (0x00) opcode.
-        run_program(&mut nnes, vec![0x00]);
+        nnes.play_test(vec![0x00]);
         // After BRK, the Break flag should be set.
         assert_eq!(nnes.get_flag(Flag::Break), true);
     }
@@ -138,7 +132,7 @@ mod test {
     fn test_tax() {
         let mut nnes = NNES::new();
         // Program: LDA immediate then TAX.
-        run_program(&mut nnes, vec![0xa9, 0x55, 0xaa, 0x00]);
+        nnes.play_test(vec![0xa9, 0x55, 0xaa, 0x00]);
         // TAX copies accumulator into X.
         assert_eq!(nnes.get_register(Register::XIndex), 0x55);
     }
@@ -159,5 +153,91 @@ mod test {
         nnes2.set_register(Register::XIndex, 0x10);
         nnes2.run();
         assert_eq!(nnes2.get_register(Register::XIndex), 0x11);
+    }
+
+    #[test]
+    fn test_sta_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::ACCUMULATOR, 0xAB);
+        // STA zero page (0x85) at address 0x10, then BRK.
+        nnes.load(vec![0x85, 0x10, 0x00]);
+        nnes.run();
+        assert_eq!(nnes.memory_read(0x10), 0xAB);
+    }
+
+    #[test]
+    fn test_sta_zero_page_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::ACCUMULATOR, 0xCD);
+        nnes.set_register(Register::XIndex, 0x04);
+        // STA zero page,X (0x95): base 0x20 + X = 0x20+0x04=0x24.
+        nnes.load(vec![0x95, 0x20, 0x00]);
+        nnes.run();
+        assert_eq!(nnes.memory_read(0x20 + 0x04), 0xCD);
+    }
+
+    #[test]
+    fn test_sta_absolute() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::ACCUMULATOR, 0xEF);
+        // STA absolute (0x8D) to address 0x3000 (0x00, 0x30), then BRK.
+        nnes.load(vec![0x8d, 0x00, 0x30, 0x00]);
+        nnes.run();
+        assert_eq!(nnes.memory_read(0x3000), 0xEF);
+    }
+
+    #[test]
+    fn test_sta_absolute_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::ACCUMULATOR, 0x12);
+        nnes.set_register(Register::XIndex, 0x05);
+        // STA absolute,X (0x9D): base 0x4000 + X = 0x4005, then BRK.
+        nnes.load(vec![0x9d, 0x00, 0x40, 0x00]);
+        nnes.run();
+        assert_eq!(nnes.memory_read(0x4000 + 0x05), 0x12);
+    }
+
+    #[test]
+    fn test_sta_absolute_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::ACCUMULATOR, 0x34);
+        nnes.set_register(Register::YIndex, 0x06);
+        // STA absolute,Y (0x99): base 0x5000 + Y = 0x5006, then BRK.
+        nnes.load(vec![0x99, 0x00, 0x50, 0x00]);
+        nnes.run();
+        assert_eq!(nnes.memory_read(0x5000 + 0x06), 0x34);
+    }
+
+    #[test]
+    fn test_sta_indirect_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::ACCUMULATOR, 0x56);
+        nnes.set_register(Register::XIndex, 0x03);
+        // STA indirect,X (0x81). Program loaded at 0x8000:
+        // [opcode, pointer_low, pointer_high, BRK] where pointer becomes 0x0060.
+        nnes.load(vec![0x81, 0x60, 0x00, 0x00]);
+        // In indirect,X mode: effective address = word at (pointer + X).
+        // Write pointer table at address (0x60 + 0x03) = 0x63.
+        // Let effective address be 0x7000 (low=0x00, high=0x70)
+        nnes.memory_write(0x60 + 0x03, 0x00); // low byte of effective address
+        nnes.memory_write(0x60 + 0x03 + 1, 0x70); // high byte
+        nnes.run();
+        assert_eq!(nnes.memory_read(0x7000), 0x56);
+    }
+
+    #[test]
+    fn test_sta_indirect_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::ACCUMULATOR, 0x78);
+        nnes.set_register(Register::YIndex, 0x02);
+        // STA indirect,Y (0x91). Program loaded at 0x8000:
+        // [opcode, pointer, BRK] where pointer becomes 0x0080.
+        nnes.load(vec![0x91, 0x80, 0x00, 0x00]);
+        // In indirect,Y mode: effective address = (word at pointer) + Y.
+        // Set pointer table at address 0x0080 to base 0x2020 (0x20, 0x20), so effective = 0x2020 + 0x02 = 0x2022.
+        nnes.memory_write(0x0080, 0x20); // low
+        nnes.memory_write(0x0080 + 1, 0x20); // high
+        nnes.run();
+        assert_eq!(nnes.memory_read(0x2020 + 0x02), 0x78);
     }
 }
