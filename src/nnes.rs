@@ -72,7 +72,7 @@ impl NNES {
                     self.handle_lda(addressing_mode);
                 }
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
-                    self.handle_sta();
+                    self.handle_sta(addressing_mode);
                 }
                 0xAA => {
                     self.handle_tax();

@@ -80,6 +80,12 @@ impl NNES {
         self.update_op_flags(data as u8);
     }
 
+    pub fn handle_sta(&mut self, mode: AddressingMode) {
+        let data: u8 = self.get_register(Register::ACCUMULATOR);
+        let addr: u16 = self.get_operand(mode);
+        self.memory_write(addr, data);
+    }
+
     pub fn handle_tax(&mut self) {
         let reg_acc: u8 = self.get_register(Register::ACCUMULATOR);
         self.set_register(Register::XIndex, reg_acc);
@@ -95,9 +101,5 @@ impl NNES {
             self.set_register(Register::XIndex, reg_x + 1);
             self.update_op_flags(reg_x + 1);
         }
-    }
-
-    pub fn handle_sta(&mut self) {
-        
     }
 }
