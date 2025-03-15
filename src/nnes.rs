@@ -1,22 +1,22 @@
 // Make only the enums and utilities public to main.rs
-pub use registers::Register;
 pub use flags::Flag;
 pub use interrupts::Interrupt;
-pub use opcodes::OpCode;
 pub use memory::AddressingMode;
+pub use opcodes::OpCode;
+pub use registers::Register;
 pub mod utils;
 
-mod registers;
 mod flags;
 mod interrupts;
 mod memory;
 mod opcodes;
+mod registers;
 
-use registers::*;
 use flags::*;
 use interrupts::*;
 use memory::*;
 use opcodes::*;
+use registers::*;
 
 pub struct NNES {
     program_counter: u16,
@@ -66,7 +66,7 @@ impl NNES {
                 .get(&code)
                 .expect(&format!("OpCode {:x} is not recognized", code));
             let addressing_mode: AddressingMode = ins.get_addressing_mode();
-            
+
             match code {
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.handle_lda(addressing_mode);
@@ -86,7 +86,7 @@ impl NNES {
                 _ => {
                     return;
                 }
-            }            
+            }
         }
     }
 

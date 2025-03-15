@@ -1,5 +1,4 @@
-pub enum Interrupt
-{
+pub enum Interrupt {
     Reset,
     NMI,
     IRQ,

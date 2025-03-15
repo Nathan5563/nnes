@@ -1,4 +1,4 @@
-use crate::nnes::{NNES, Register};
+use crate::nnes::{Register, NNES};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum AddressingMode {
@@ -42,7 +42,7 @@ impl NNES {
         self.set_program_counter(pc + 1);
         op as u16
     }
-    
+
     fn handle_zero_page(&mut self, index: RegisterOffset) -> u16 {
         let pc: u16 = self.get_program_counter();
         let addr: u8 = self.memory_read(pc);
@@ -60,7 +60,7 @@ impl NNES {
         self.set_program_counter(pc + 1);
         offset as u16
     }
-    
+
     fn handle_absolute(&mut self, index: RegisterOffset) -> u16 {
         let pc: u16 = self.get_program_counter();
         let addr_lower: u8 = self.memory_read(pc);
@@ -73,14 +73,14 @@ impl NNES {
             RegisterOffset::YIndex => addr + self.get_register(Register::YIndex) as u16,
         }
     }
-    
+
     fn handle_indirect(&mut self, index: RegisterOffset) -> u16 {
         let pc: u16 = self.get_program_counter();
         let indirect_lower: u8 = self.memory_read(pc);
         let indirect_higher: u8 = self.memory_read(pc + 1);
         self.set_program_counter(pc + 2);
         let indirect: u16 = ((indirect_higher as u16) << 8) | (indirect_lower as u16);
-        let addr_lower: u8; 
+        let addr_lower: u8;
         let addr_higher: u8;
         let addr: u16;
         match index {
@@ -120,7 +120,7 @@ impl NNES {
             AddressingMode::Indirect => self.handle_indirect(RegisterOffset::None),
             AddressingMode::IndirectX => self.handle_indirect(RegisterOffset::XIndex),
             AddressingMode::IndirectY => self.handle_indirect(RegisterOffset::YIndex),
-            _ => 0
+            _ => 0,
         }
     }
 }

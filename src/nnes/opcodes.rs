@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::nnes::{NNES, Register, Flag, AddressingMode};
+use crate::nnes::{AddressingMode, Flag, Register, NNES};
 
 pub struct OpCode {
     code: u8,
@@ -11,13 +11,7 @@ pub struct OpCode {
 }
 
 impl OpCode {
-    pub fn new(
-        code: u8,
-        instruction: String,
-        bytes: u8,
-        cycles: u8,
-        mode: AddressingMode,
-    ) -> Self {
+    pub fn new(code: u8, instruction: String, bytes: u8, cycles: u8, mode: AddressingMode) -> Self {
         OpCode {
             code: code,
             instruction: instruction,
@@ -217,7 +211,7 @@ lazy_static! {
         OpCode::new(0x10, "BPL".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
         OpCode::new(0x50, "BVC".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
         OpCode::new(0x70, "BVS".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
-];
+    ];
 
     pub static ref opcodes_map: HashMap<u8, &'static OpCode> = {
         let mut map = HashMap::new();
@@ -236,8 +230,8 @@ impl NNES {
     pub fn handle_lda(&mut self, mode: AddressingMode) {
         let op: u16 = self.get_operand(mode);
         let mut data: u16 = op;
-        if mode != AddressingMode::Immediate { 
-            data = self.memory_read(op) as u16; 
+        if mode != AddressingMode::Immediate {
+            data = self.memory_read(op) as u16;
         }
         self.set_register(Register::ACCUMULATOR, data as u8);
         self.update_op_flags(data as u8);

@@ -6,7 +6,7 @@
 extern crate lazy_static;
 
 mod nnes;
-use nnes::{NNES, Flag, Register, AddressingMode};
+use nnes::{AddressingMode, Flag, Register, NNES};
 
 fn main() {}
 
@@ -83,17 +83,17 @@ mod test {
         // We'll call handle_lda directly with AddressingMode::IndirectX.
         // Prepare program at 0x8000: two bytes for the pointer.
         nnes.load(vec![0x00, 0x01, 0x00]); // dummy program; opcode isn't used here.
-        // Set register X to offset.
+                                           // Set register X to offset.
         nnes.set_register(Register::XIndex, 0x04);
         // Place the two pointer bytes at 0x8000.
         // When handle_indirect is called it reads two bytes: low, high => pointer.
         nnes.memory_write(0x8000, 0x00);
-        nnes.memory_write(0x8001, 0x01);  // pointer = 0x0100.
-        // In the XIndex branch, effective pointer = (0x0100 + X).
-        // Now at address (0x0100 + 0x04) put the low/high of final address.
+        nnes.memory_write(0x8001, 0x01); // pointer = 0x0100.
+                                         // In the XIndex branch, effective pointer = (0x0100 + X).
+                                         // Now at address (0x0100 + 0x04) put the low/high of final address.
         nnes.memory_write(0x0100 + 0x04, 0x00);
         nnes.memory_write(0x0100 + 0x04 + 1, 0x02); // final address = 0x0200.
-        // At final address 0x0200, store the value.
+                                                    // At final address 0x0200, store the value.
         nnes.memory_write(0x0200, 0xAA);
         // Directly call LDA with IndirectX addressing mode.
         nnes.handle_lda(AddressingMode::IndirectX);
@@ -109,11 +109,11 @@ mod test {
         nnes.set_register(Register::YIndex, 0x03);
         // At 0x8000, write pointer bytes.
         nnes.memory_write(0x8000, 0x00);
-        nnes.memory_write(0x8001, 0x01);  // pointer = 0x0100.
-        // In IndirectY branch, the base address is read from 0x0100 and 0x0101.
+        nnes.memory_write(0x8001, 0x01); // pointer = 0x0100.
+                                         // In IndirectY branch, the base address is read from 0x0100 and 0x0101.
         nnes.memory_write(0x0100, 0x00);
         nnes.memory_write(0x0101, 0x03); // base address = 0x0300.
-        // Final effective address = 0x0300 + Y (0x03) = 0x0303.
+                                         // Final effective address = 0x0300 + Y (0x03) = 0x0303.
         nnes.memory_write(0x0303, 0xBB);
         nnes.handle_lda(AddressingMode::IndirectY);
         assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0xBB);
