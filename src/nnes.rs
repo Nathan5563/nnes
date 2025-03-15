@@ -2,7 +2,8 @@
 pub use registers::Register;
 pub use flags::Flag;
 pub use interrupts::Interrupt;
-// pub use opcodes::OpCode;
+pub use opcodes::OpCode;
+pub use memory::AddressingMode;
 pub mod utils;
 
 mod registers;
@@ -60,13 +61,15 @@ impl NNES {
         while !self.get_flag(Flag::Break) {
             let pc: u16 = self.get_program_counter();
             let code: u8 = self.memory_read(pc);
+            self.set_program_counter(pc + 1);
             let ins = opcodes_map
                 .get(&code)
                 .expect(&format!("OpCode {:x} is not recognized", code));
+            let addressing_mode: AddressingMode = ins.get_addressing_mode();
             
             match code {
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
-                    self.handle_lda();
+                    self.handle_lda(addressing_mode);
                 }
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
                     self.handle_sta();

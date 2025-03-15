@@ -26,6 +26,10 @@ impl OpCode {
             mode: mode,
         }
     }
+
+    pub fn get_addressing_mode(&self) -> AddressingMode {
+        self.mode
+    }
 }
 
 lazy_static! {
@@ -66,12 +70,14 @@ impl NNES {
         self.set_flag(Flag::Break, true);
     }
 
-    pub fn handle_lda(&mut self) {
-        let pc: u16 = self.get_program_counter();
-        let param: u8 = self.memory_read(pc);
-        self.set_program_counter(pc + 1);
-        self.set_register(Register::ACCUMULATOR, param);
-        self.update_op_flags(param);
+    pub fn handle_lda(&mut self, mode: AddressingMode) {
+        let op: u16 = self.get_operand(mode);
+        let mut data: u16 = op;
+        if mode != AddressingMode::Immediate { 
+            data = self.memory_read(op) as u16; 
+        }
+        self.set_register(Register::ACCUMULATOR, data as u8);
+        self.update_op_flags(data as u8);
     }
 
     pub fn handle_tax(&mut self) {
