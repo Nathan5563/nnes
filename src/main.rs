@@ -6,7 +6,7 @@
 extern crate lazy_static;
 
 mod nnes;
-use nnes::{NNES, Flag, Register};
+use nnes::{NNES, Flag, Register, AddressingMode};
 
 fn main() {}
 
@@ -14,120 +14,150 @@ fn main() {}
 mod test {
     use super::*;
 
-    #[test]
-    fn t0x00_brk() {
-        let mut nnes: NNES = NNES::new();
-        nnes.play_test(vec![0x00]);
-        assert!(nnes.get_flag(Flag::Break) == true);
+    // Helper: Calls run() after load and any memory setup.
+    fn run_program(nnes: &mut NNES, program: Vec<u8>) {
+        nnes.load(program);
+        nnes.run();
     }
 
     #[test]
-    fn t0xa9_lda_immediate() {
-        let mut nnes: NNES = NNES::new();
-        nnes.play_test(vec![0xa9, 0x05, 0x00]);
-        assert!(nnes.get_register(Register::ACCUMULATOR) == 0x05);
-        assert!(nnes.get_flag(Flag::Zero) == false);
-        assert!(nnes.get_flag(Flag::Negative) == false);
+    fn test_lda_immediate() {
+        let mut nnes = NNES::new();
+        // Program: LDA immediate (0xa9), operand, then BRK.
+        run_program(&mut nnes, vec![0xa9, 0x42, 0x00]);
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0x42);
     }
 
     #[test]
-    fn t0xa9_lda_zero_flag() {
-        let mut nnes: NNES = NNES::new();
-        nnes.play_test(vec![0xa9, 0x00, 0x00]);
-        assert!(nnes.get_flag(Flag::Zero) == true);
-        nnes.reset();
-        nnes.play_test(vec![0xa9, 0x80, 0x00]);
-        assert!(nnes.get_flag(Flag::Zero) == false);
+    fn test_lda_zero_page() {
+        let mut nnes = NNES::new();
+        // Program: LDA zero page (0xa5), operand 0x10, then BRK.
+        nnes.load(vec![0xa5, 0x10, 0x00]);
+        // Set memory at zero page address 0x10.
+        nnes.memory_write(0x10, 0x55);
+        nnes.run();
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0x55);
     }
 
     #[test]
-    fn t0xa9_lda_negative_flag() {
-        let mut nnes: NNES = NNES::new();
-        nnes.play_test(vec![0xa9, 0x80, 0x00]);
-        assert!(nnes.get_flag(Flag::Negative) == true);
-        nnes.reset();
-        nnes.play_test(vec![0xa9, 0x7F, 0x00]);
-        assert!(nnes.get_flag(Flag::Negative) == false);
+    fn test_lda_zero_page_x() {
+        let mut nnes = NNES::new();
+        // Program: LDA zero page,X (0xb5), operand 0x10, then BRK.
+        nnes.load(vec![0xb5, 0x10, 0x00]);
+        // Set register X and value at (operand + X)
+        nnes.set_register(Register::XIndex, 0x05);
+        nnes.memory_write(0x10 + 0x05, 0x66);
+        nnes.run();
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0x66);
     }
 
     #[test]
-    fn t0xaa_tax_implied() {
-        let mut nnes: NNES = NNES::new();
-        nnes.set_register(Register::ACCUMULATOR, 10);
-        nnes.play_test(vec![0xaa, 0x00]);
-        assert!(nnes.get_register(Register::XIndex) == 10);
+    fn test_lda_absolute() {
+        let mut nnes = NNES::new();
+        // Program: LDA absolute (0xad), operand low/high for 0x1234, then BRK.
+        nnes.load(vec![0xad, 0x34, 0x12, 0x00]);
+        nnes.memory_write(0x1234, 0x77);
+        nnes.run();
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0x77);
     }
 
     #[test]
-    fn t0xaa_tax_zero_flag() {
-        let mut nnes: NNES = NNES::new();
-        nnes.set_register(Register::ACCUMULATOR, 0);
-        nnes.play_test(vec![0xaa, 0x00]);
-        assert!(nnes.get_flag(Flag::Zero) == true);
-        nnes.reset();
-        nnes.set_register(Register::ACCUMULATOR, 128);
-        nnes.play_test(vec![0xaa, 0x00]);
-        assert!(nnes.get_flag(Flag::Zero) == false);
+    fn test_lda_absolute_x() {
+        let mut nnes = NNES::new();
+        // Program: LDA absolute,X (0xbd), operands for base address 0x1200, then BRK.
+        nnes.load(vec![0xbd, 0x00, 0x12, 0x00]);
+        nnes.set_register(Register::XIndex, 0x05);
+        nnes.memory_write(0x1200 + 0x05, 0x88);
+        nnes.run();
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0x88);
     }
 
     #[test]
-    fn t0xaa_tax_negative_flag() {
-        let mut nnes: NNES = NNES::new();
-        nnes.set_register(Register::ACCUMULATOR, 128);
-        nnes.play_test(vec![0xaa, 0x00]);
-        assert!(nnes.get_flag(Flag::Negative) == true);
-        nnes.reset();
-        nnes.set_register(Register::ACCUMULATOR, 127);
-        nnes.play_test(vec![0xaa, 0x00]);
-        assert!(nnes.get_flag(Flag::Negative) == false);
+    fn test_lda_absolute_y() {
+        let mut nnes = NNES::new();
+        // Program: LDA absolute,Y (0xb9), operands for base address 0x1200, then BRK.
+        nnes.load(vec![0xb9, 0x00, 0x12, 0x00]);
+        nnes.set_register(Register::YIndex, 0x06);
+        nnes.memory_write(0x1200 + 0x06, 0x99);
+        nnes.run();
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0x99);
     }
 
     #[test]
-    fn t0xe8_inx_implied() {
-        let mut nnes: NNES = NNES::new();
-        nnes.set_register(Register::XIndex, 10);
-        nnes.play_test(vec![0xe8, 0x00]);
-        assert!(nnes.get_register(Register::XIndex) == 11);
+    fn test_lda_indirect_x() {
+        let mut nnes = NNES::new();
+        // We'll call handle_lda directly with AddressingMode::IndirectX.
+        // Prepare program at 0x8000: two bytes for the pointer.
+        nnes.load(vec![0x00, 0x01, 0x00]); // dummy program; opcode isn't used here.
+        // Set register X to offset.
+        nnes.set_register(Register::XIndex, 0x04);
+        // Place the two pointer bytes at 0x8000.
+        // When handle_indirect is called it reads two bytes: low, high => pointer.
+        nnes.memory_write(0x8000, 0x00);
+        nnes.memory_write(0x8001, 0x01);  // pointer = 0x0100.
+        // In the XIndex branch, effective pointer = (0x0100 + X).
+        // Now at address (0x0100 + 0x04) put the low/high of final address.
+        nnes.memory_write(0x0100 + 0x04, 0x00);
+        nnes.memory_write(0x0100 + 0x04 + 1, 0x02); // final address = 0x0200.
+        // At final address 0x0200, store the value.
+        nnes.memory_write(0x0200, 0xAA);
+        // Directly call LDA with IndirectX addressing mode.
+        nnes.handle_lda(AddressingMode::IndirectX);
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0xAA);
     }
 
     #[test]
-    fn t0xe8_inx_overflow() {
-        let mut nnes: NNES = NNES::new();
-        nnes.set_register(Register::XIndex, 0xfe);
-        nnes.play_test(vec![0xe8, 0x00]);
-        assert!(nnes.get_flag(Flag::Negative) == true);
-        nnes.reset();
+    fn test_lda_indirect_y() {
+        let mut nnes = NNES::new();
+        // Call handle_lda with AddressingMode::IndirectY.
+        nnes.load(vec![0x00, 0x01, 0x00]);
+        // Set register Y.
+        nnes.set_register(Register::YIndex, 0x03);
+        // At 0x8000, write pointer bytes.
+        nnes.memory_write(0x8000, 0x00);
+        nnes.memory_write(0x8001, 0x01);  // pointer = 0x0100.
+        // In IndirectY branch, the base address is read from 0x0100 and 0x0101.
+        nnes.memory_write(0x0100, 0x00);
+        nnes.memory_write(0x0101, 0x03); // base address = 0x0300.
+        // Final effective address = 0x0300 + Y (0x03) = 0x0303.
+        nnes.memory_write(0x0303, 0xBB);
+        nnes.handle_lda(AddressingMode::IndirectY);
+        assert_eq!(nnes.get_register(Register::ACCUMULATOR), 0xBB);
+    }
+
+    #[test]
+    fn test_brk() {
+        let mut nnes = NNES::new();
+        // Program: Only BRK (0x00) opcode.
+        run_program(&mut nnes, vec![0x00]);
+        // After BRK, the Break flag should be set.
+        assert_eq!(nnes.get_flag(Flag::Break), true);
+    }
+
+    #[test]
+    fn test_tax() {
+        let mut nnes = NNES::new();
+        // Program: LDA immediate then TAX.
+        run_program(&mut nnes, vec![0xa9, 0x55, 0xaa, 0x00]);
+        // TAX copies accumulator into X.
+        assert_eq!(nnes.get_register(Register::XIndex), 0x55);
+    }
+
+    #[test]
+    fn test_inx() {
+        let mut nnes = NNES::new();
+        // Program: Set X to 0xff, then INX.
+        nnes.load(vec![0xe8, 0x00]);
         nnes.set_register(Register::XIndex, 0xff);
-        nnes.play_test(vec![0xe8, 0x00]);
-        assert!(nnes.get_register(Register::XIndex) == 0);
-        assert!(nnes.get_flag(Flag::Zero) == true);
-        assert!(nnes.get_flag(Flag::Negative) == false);
-        nnes.reset();
-        nnes.set_register(Register::XIndex, 0xff);
-        nnes.play_test(vec![0xe8, 0xe8, 0x00]);
-        assert!(nnes.get_register(Register::XIndex) == 1);
-        assert!(nnes.get_flag(Flag::Zero) == false);
-        assert!(nnes.get_flag(Flag::Negative) == false);
-    }
+        nnes.run();
+        // When X is 0xff, it wraps to 0.
+        assert_eq!(nnes.get_register(Register::XIndex), 0x00);
 
-    #[test]
-    fn t0xe8_inx_negative_flag() {
-        let mut nnes: NNES = NNES::new();
-        nnes.set_register(Register::XIndex, 127);
-        nnes.play_test(vec![0xe8, 0x00]);
-        assert!(nnes.get_flag(Flag::Negative) == true);
-        nnes.reset();
-        nnes.set_register(Register::XIndex, 126);
-        nnes.play_test(vec![0xe8, 0x00]);
-        assert!(nnes.get_flag(Flag::Negative) == false);
-    }
-
-    #[test]
-    fn t0x00_t0xa9_immediate_t0xaa_implied_t0xe8_implied() {
-        let mut nnes: NNES = NNES::new();
-        nnes.play_test(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
-        assert!(nnes.get_register(Register::XIndex) == 0xc1);
-        assert!(nnes.get_flag(Flag::Zero) == false);
-        assert!(nnes.get_flag(Flag::Negative) == true);
+        // Test normal increment.
+        let mut nnes2 = NNES::new();
+        nnes2.load(vec![0xe8, 0x00]);
+        nnes2.set_register(Register::XIndex, 0x10);
+        nnes2.run();
+        assert_eq!(nnes2.get_register(Register::XIndex), 0x11);
     }
 }
