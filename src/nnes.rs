@@ -65,27 +65,26 @@ impl NNES {
             let ins = opcodes_map
                 .get(&code)
                 .expect(&format!("OpCode {:x} is not recognized", code));
-            let addressing_mode: AddressingMode = ins.get_addressing_mode();
+            let mode: AddressingMode = ins.get_addressing_mode();
 
             match code {
-                0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
-                    self.handle_lda(addressing_mode);
-                }
-                0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
-                    self.handle_sta(addressing_mode);
-                }
-                0xAA => {
-                    self.handle_tax();
-                }
-                0xe8 => {
-                    self.handle_inx();
-                }
-                0x00 => {
-                    self.handle_brk();
-                }
-                _ => {
-                    return;
-                }
+                0xaa => self.handle_tax(),
+                0xa8 => self.handle_tay(),
+                0xba => self.handle_tsx(),
+                0x8a => self.handle_txa(),
+                0x9a => self.handle_txs(),
+                0x98 => self.handle_tya(),
+                0x18 => self.handle_clc(),
+                0xd8 => self.handle_cld(),
+                0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.handle_lda(mode),
+                0xa2 | 0xa6 | 0xb6 | 0xae | 0xbe => self.handle_ldx(mode),
+                0xa0 | 0xa4 | 0xb4 | 0xac | 0xbc => self.handle_ldy(mode),
+                0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.handle_sta(mode),
+                0x86 | 0x96 | 0x8e => self.handle_stx(mode),
+                0x84 | 0x94 | 0x8c => self.handle_sty(mode),
+                0xe8 => self.handle_inx(),
+                0x00 => self.handle_brk(),
+                _ => return,
             }
         }
     }

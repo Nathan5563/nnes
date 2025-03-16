@@ -38,7 +38,7 @@ lazy_static! {
         OpCode::new(0x98, "TYA".to_string(), 1, 2, AddressingMode::Implied),
         // Flags
         OpCode::new(0x18, "CLC".to_string(), 1, 2, AddressingMode::Implied),
-        OpCode::new(0xD8, "CLD".to_string(), 1, 2, AddressingMode::Implied),
+        OpCode::new(0xd8, "CLD".to_string(), 1, 2, AddressingMode::Implied),
         OpCode::new(0x58, "CLI".to_string(), 1, 2, AddressingMode::Implied),
         OpCode::new(0xb8, "CLV".to_string(), 1, 2, AddressingMode::Implied),
         OpCode::new(0x38, "SEC".to_string(), 1, 2, AddressingMode::Implied),
@@ -223,8 +223,68 @@ lazy_static! {
 }
 
 impl NNES {
-    pub fn handle_brk(&mut self) {
-        self.set_flag(Flag::Break, true);
+    pub fn handle_tax(&mut self) {
+        let reg_acc: u8 = self.get_register(Register::ACCUMULATOR);
+        self.set_register(Register::XIndex, reg_acc);
+        self.update_op_flags(reg_acc);
+    }
+
+    pub fn handle_tay(&mut self) {
+        let reg_acc: u8 = self.get_register(Register::ACCUMULATOR);
+        self.set_register(Register::YIndex, reg_acc);
+        self.update_op_flags(reg_acc);
+    }
+
+    pub fn handle_tsx(&mut self) {
+        let stk_ptr: u8 = self.get_stack_pointer();
+        self.set_register(Register::XIndex, stk_ptr);
+        self.update_op_flags(stk_ptr);
+    }
+
+    pub fn handle_txa(&mut self) {
+        let reg_x: u8 = self.get_register(Register::XIndex);
+        self.set_register(Register::ACCUMULATOR, reg_x);
+        self.update_op_flags(reg_x);
+    }
+
+    pub fn handle_txs(&mut self) {
+        let reg_x: u8 = self.get_register(Register::XIndex);
+        self.set_stack_pointer(reg_x);
+        self.update_op_flags(reg_x);
+    }
+
+    pub fn handle_tya(&mut self) {
+        let reg_y: u8 = self.get_register(Register::YIndex);
+        self.set_register(Register::ACCUMULATOR, reg_y);
+        self.update_op_flags(reg_y);
+    }
+
+    pub fn handle_clc(&mut self) {
+        self.set_flag(Flag::Carry, false);
+    }
+
+    pub fn handle_cld(&mut self) {
+        self.set_flag(Flag::DecimalMode, false);
+    }
+
+    pub fn handle_cli(&mut self) {
+        self.set_flag(Flag::InterruptDisable, false);
+    }
+
+    pub fn handle_clv(&mut self) {
+        self.set_flag(Flag::Overflow, false);
+    }
+
+    pub fn handle_sec(&mut self) {
+        self.set_flag(Flag::Carry, true);
+    }
+
+    pub fn handle_sed(&mut self) {
+        self.set_flag(Flag::DecimalMode, true);
+    }
+
+    pub fn handle_sei(&mut self) {
+        self.set_flag(Flag::InterruptDisable, true);
     }
 
     pub fn handle_lda(&mut self, mode: AddressingMode) {
@@ -237,16 +297,60 @@ impl NNES {
         self.update_op_flags(data as u8);
     }
 
+    pub fn handle_ldx(&mut self, mode: AddressingMode) {
+        let op: u16 = self.get_operand(mode);
+        let mut data: u16 = op;
+        if mode != AddressingMode::Immediate {
+            data = self.memory_read(op) as u16;
+        }
+        self.set_register(Register::XIndex, data as u8);
+    }
+
+    pub fn handle_ldy(&mut self, mode: AddressingMode) {
+        let op: u16 = self.get_operand(mode);
+        let mut data: u16 = op;
+        if mode != AddressingMode::Immediate {
+            data = self.memory_read(op) as u16;
+        }
+        self.set_register(Register::YIndex, data as u8);
+    }
+
     pub fn handle_sta(&mut self, mode: AddressingMode) {
         let data: u8 = self.get_register(Register::ACCUMULATOR);
         let addr: u16 = self.get_operand(mode);
         self.memory_write(addr, data);
     }
 
-    pub fn handle_tax(&mut self) {
-        let reg_acc: u8 = self.get_register(Register::ACCUMULATOR);
-        self.set_register(Register::XIndex, reg_acc);
-        self.update_op_flags(reg_acc);
+    pub fn handle_stx(&mut self, mode:AddressingMode) {
+        let data: u8 = self.get_register(Register::XIndex);
+        let addr: u16 = self.get_operand(mode);
+        self.memory_write(addr, data);
+    }
+
+    pub fn handle_sty(&mut self, mode: AddressingMode) {
+        let data: u8 = self.get_register(Register::YIndex);
+        let addr: u16 = self.get_operand(mode);
+        self.memory_write(addr, data);
+    }
+
+    pub fn handle_pha(&mut self) {
+        // push accumulator to stack
+    }
+
+    pub fn handle_php(&mut self) {
+        // push flags to stack
+    }
+
+    pub fn handle_pla(&mut self) {
+        // pop from stack to accumulator
+    }
+
+    pub fn handle_plp(&mut self) {
+        // pop from stack to flags
+    }
+
+    pub fn handle_brk(&mut self) {
+        self.set_flag(Flag::Break, true);
     }
 
     pub fn handle_inx(&mut self) {
