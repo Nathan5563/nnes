@@ -1,22 +1,27 @@
-// Make only the enums and utilities public to main.rs
-pub use flags::Flag;
-pub use interrupts::Interrupt;
-pub use memory::AddressingMode;
-pub use opcodes::OpCode;
-pub use registers::Register;
-pub mod utils;
-
 mod flags;
 mod interrupts;
 mod memory;
 mod opcodes;
 mod registers;
+pub mod types;
+pub mod utils;
+
+// Make only the enums and utilities public to main.rs
+pub use flags::Flag;
+pub use interrupts::Interrupt;
+pub use memory::{AddressingMode, STACK_OFFSET};
+pub use opcodes::OpCode;
+pub use registers::Register;
+pub use types::*;
+pub use utils::*;
 
 use flags::*;
 use interrupts::*;
 use memory::*;
 use opcodes::*;
 use registers::*;
+
+pub static PROGRAM_START_POINT: u16 = 0x8000;
 
 pub struct NNES {
     program_counter: u16,
@@ -32,7 +37,7 @@ impl NNES {
     pub fn new() -> Self {
         NNES {
             program_counter: 0,
-            stack_pointer: 0,
+            stack_pointer: 0xff,
             reg_accumulator: 0,
             reg_xindex: 0,
             reg_yindex: 0,
@@ -42,25 +47,25 @@ impl NNES {
     }
 
     pub fn load(&mut self, program: Vec<u8>) {
-        self.reset_memory();
         let mut idx = 0;
         for data in program {
-            self.memory_write(0x8000 + idx, data);
+            self.memory_write_u8(PROGRAM_START_POINT + idx, data);
             idx += 1;
         }
-        self.set_program_counter(0x8000);
+        self.memory_write_u16(0xfffc, PROGRAM_START_POINT);
     }
 
-    pub fn reset(&mut self) {
-        self.set_program_counter(self.memory_read(0xfffc) as u16);
+    pub fn reset_state(&mut self) {
         self.reset_registers();
         self.reset_flags();
+        self.set_program_counter(self.memory_read_u16(0xfffc));
+        self.set_stack_pointer(0xff);
     }
 
     pub fn run(&mut self) {
         while !self.get_flag(Flag::Break) {
             let pc: u16 = self.get_program_counter();
-            let code: u8 = self.memory_read(pc);
+            let code: u8 = self.memory_read_u8(pc);
             self.set_program_counter(pc + 1);
             let ins = opcodes_map
                 .get(&code)
@@ -82,6 +87,10 @@ impl NNES {
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.handle_sta(mode),
                 0x86 | 0x96 | 0x8e => self.handle_stx(mode),
                 0x84 | 0x94 | 0x8c => self.handle_sty(mode),
+                0x48 => self.handle_pha(),
+                0x08 => self.handle_php(),
+                0x68 => self.handle_pla(),
+                0x28 => self.handle_plp(),
                 0xe8 => self.handle_inx(),
                 0x00 => self.handle_brk(),
                 _ => return,
@@ -91,12 +100,13 @@ impl NNES {
 
     pub fn play(&mut self, program: Vec<u8>) {
         self.load(program);
-        self.reset();
+        self.reset_state();
         self.run();
     }
 
     pub fn play_test(&mut self, program: Vec<u8>) {
         self.load(program);
+        self.set_program_counter(self.memory_read_u16(0xfffc));
         self.run();
     }
 }

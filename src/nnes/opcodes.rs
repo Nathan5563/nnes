@@ -224,13 +224,13 @@ lazy_static! {
 
 impl NNES {
     pub fn handle_tax(&mut self) {
-        let reg_acc: u8 = self.get_register(Register::ACCUMULATOR);
+        let reg_acc: u8 = self.get_register(Register::Accumulator);
         self.set_register(Register::XIndex, reg_acc);
         self.update_op_flags(reg_acc);
     }
 
     pub fn handle_tay(&mut self) {
-        let reg_acc: u8 = self.get_register(Register::ACCUMULATOR);
+        let reg_acc: u8 = self.get_register(Register::Accumulator);
         self.set_register(Register::YIndex, reg_acc);
         self.update_op_flags(reg_acc);
     }
@@ -243,7 +243,7 @@ impl NNES {
 
     pub fn handle_txa(&mut self) {
         let reg_x: u8 = self.get_register(Register::XIndex);
-        self.set_register(Register::ACCUMULATOR, reg_x);
+        self.set_register(Register::Accumulator, reg_x);
         self.update_op_flags(reg_x);
     }
 
@@ -255,7 +255,7 @@ impl NNES {
 
     pub fn handle_tya(&mut self) {
         let reg_y: u8 = self.get_register(Register::YIndex);
-        self.set_register(Register::ACCUMULATOR, reg_y);
+        self.set_register(Register::Accumulator, reg_y);
         self.update_op_flags(reg_y);
     }
 
@@ -291,9 +291,9 @@ impl NNES {
         let op: u16 = self.get_operand(mode);
         let mut data: u16 = op;
         if mode != AddressingMode::Immediate {
-            data = self.memory_read(op) as u16;
+            data = self.memory_read_u8(op) as u16;
         }
-        self.set_register(Register::ACCUMULATOR, data as u8);
+        self.set_register(Register::Accumulator, data as u8);
         self.update_op_flags(data as u8);
     }
 
@@ -301,7 +301,7 @@ impl NNES {
         let op: u16 = self.get_operand(mode);
         let mut data: u16 = op;
         if mode != AddressingMode::Immediate {
-            data = self.memory_read(op) as u16;
+            data = self.memory_read_u8(op) as u16;
         }
         self.set_register(Register::XIndex, data as u8);
     }
@@ -310,43 +310,45 @@ impl NNES {
         let op: u16 = self.get_operand(mode);
         let mut data: u16 = op;
         if mode != AddressingMode::Immediate {
-            data = self.memory_read(op) as u16;
+            data = self.memory_read_u8(op) as u16;
         }
         self.set_register(Register::YIndex, data as u8);
     }
 
     pub fn handle_sta(&mut self, mode: AddressingMode) {
-        let data: u8 = self.get_register(Register::ACCUMULATOR);
+        let data: u8 = self.get_register(Register::Accumulator);
         let addr: u16 = self.get_operand(mode);
-        self.memory_write(addr, data);
+        self.memory_write_u8(addr, data);
     }
 
-    pub fn handle_stx(&mut self, mode:AddressingMode) {
+    pub fn handle_stx(&mut self, mode: AddressingMode) {
         let data: u8 = self.get_register(Register::XIndex);
         let addr: u16 = self.get_operand(mode);
-        self.memory_write(addr, data);
+        self.memory_write_u8(addr, data);
     }
 
     pub fn handle_sty(&mut self, mode: AddressingMode) {
         let data: u8 = self.get_register(Register::YIndex);
         let addr: u16 = self.get_operand(mode);
-        self.memory_write(addr, data);
+        self.memory_write_u8(addr, data);
     }
 
     pub fn handle_pha(&mut self) {
-        // push accumulator to stack
+        self.stack_push(self.get_register(Register::Accumulator));
     }
 
     pub fn handle_php(&mut self) {
-        // push flags to stack
+        self.stack_push(self.get_flags());
     }
 
     pub fn handle_pla(&mut self) {
-        // pop from stack to accumulator
+        let data: u8 = self.stack_pop();
+        self.set_register(Register::Accumulator, data);
     }
 
     pub fn handle_plp(&mut self) {
-        // pop from stack to flags
+        let data: u8 = self.stack_pop();
+        self.set_flags(data);
     }
 
     pub fn handle_brk(&mut self) {
