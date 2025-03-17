@@ -357,4 +357,254 @@ mod test {
         nnes.play_test(vec![0x98, 0x00]); // TYA, BRK
         assert_eq!(nnes.get_register(Register::Accumulator), 0x99);
     }
+
+    #[test]
+    fn test_and_immediate() {
+        let mut nnes = NNES::new();
+        // LDA #$CA, then AND #$AA: 0xCA & 0xAA = 0x8A.
+        nnes.play_test(vec![0xa9, 0xCA, 0x29, 0xAA, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x8A);
+    }
+
+    #[test]
+    fn test_and_zero_page() {
+        let mut nnes = NNES::new();
+        // Set accumulator to 0xCA then AND with value at zero page 0x10 (0xAA): result = 0x8A.
+        nnes.set_register(Register::Accumulator, 0xCA);
+        nnes.memory_write_u8(0x10, 0xAA);
+        nnes.play_test(vec![0x25, 0x10, 0x00]); // AND zero page
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x8A);
+    }
+
+    #[test]
+    fn test_ora_immediate() {
+        let mut nnes = NNES::new();
+        // LDA #$55, then ORA #$AA: 0x55 | 0xAA = 0xFF.
+        nnes.play_test(vec![0xa9, 0x55, 0x09, 0xAA, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xFF);
+    }
+
+    #[test]
+    fn test_ora_zero_page() {
+        let mut nnes = NNES::new();
+        // Set accumulator to 0x55 then OR with value at zero page 0x20 (0xAA): result = 0xFF.
+        nnes.set_register(Register::Accumulator, 0x55);
+        nnes.memory_write_u8(0x20, 0xAA);
+        nnes.play_test(vec![0x05, 0x20, 0x00]); // ORA zero page
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xFF);
+    }
+
+    #[test]
+    fn test_eor_immediate() {
+        let mut nnes = NNES::new();
+        // LDA #$FF, then EOR #$0F: 0xFF ^ 0x0F = 0xF0.
+        nnes.play_test(vec![0xa9, 0xFF, 0x49, 0x0F, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xF0);
+    }
+
+    #[test]
+    fn test_eor_zero_page() {
+        let mut nnes = NNES::new();
+        // Set accumulator to 0x0F then EOR with value at zero page 0x30 (0xFF): 0x0F ^ 0xFF = 0xF0.
+        nnes.set_register(Register::Accumulator, 0x0F);
+        nnes.memory_write_u8(0x30, 0xFF);
+        nnes.play_test(vec![0x45, 0x30, 0x00]); // EOR zero page
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xF0);
+    }
+
+    // NEW: Tests for LDX instruction
+    #[test]
+    fn test_ldx_immediate() {
+        let mut nnes = NNES::new();
+        // LDX immediate: opcode 0xa2
+        nnes.play_test(vec![0xa2, 0x55, 0x00]);
+        assert_eq!(nnes.get_register(Register::XIndex), 0x55);
+    }
+
+    #[test]
+    fn test_ldx_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x10, 0x66);
+        // LDX zero page: opcode 0xa6
+        nnes.play_test(vec![0xa6, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::XIndex), 0x66);
+    }
+
+    #[test]
+    fn test_ldx_zero_page_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::YIndex, 0x03);
+        nnes.memory_write_u8(0x10 + 0x03, 0x77);
+        // LDX zero page,Y: opcode 0xb6
+        nnes.play_test(vec![0xb6, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::XIndex), 0x77);
+    }
+
+    #[test]
+    fn test_ldx_absolute() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x1234, 0x88);
+        // LDX absolute: opcode 0xae, low then high byte of address 0x1234
+        nnes.play_test(vec![0xae, 0x34, 0x12, 0x00]);
+        assert_eq!(nnes.get_register(Register::XIndex), 0x88);
+    }
+
+    #[test]
+    fn test_ldx_absolute_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::YIndex, 0x05);
+        nnes.memory_write_u8(0x1200 + 0x05, 0x99);
+        // LDX absolute,Y: opcode 0xbe, low then high byte of base address 0x1200
+        nnes.play_test(vec![0xbe, 0x00, 0x12, 0x00]);
+        assert_eq!(nnes.get_register(Register::XIndex), 0x99);
+    }
+
+    // NEW: Tests for LDY instruction
+    #[test]
+    fn test_ldy_immediate() {
+        let mut nnes = NNES::new();
+        // LDY immediate: opcode 0xa0
+        nnes.play_test(vec![0xa0, 0x44, 0x00]);
+        assert_eq!(nnes.get_register(Register::YIndex), 0x44);
+    }
+
+    #[test]
+    fn test_ldy_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x20, 0x55);
+        // LDY zero page: opcode 0xa4
+        nnes.play_test(vec![0xa4, 0x20, 0x00]);
+        assert_eq!(nnes.get_register(Register::YIndex), 0x55);
+    }
+
+    #[test]
+    fn test_ldy_zero_page_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::XIndex, 0x03);
+        nnes.memory_write_u8(0x20 + 0x03, 0x66);
+        // LDY zero page,X: opcode 0xb4
+        nnes.play_test(vec![0xb4, 0x20, 0x00]);
+        assert_eq!(nnes.get_register(Register::YIndex), 0x66);
+    }
+
+    #[test]
+    fn test_ldy_absolute() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x2345, 0x77);
+        // LDY absolute: opcode 0xac
+        nnes.play_test(vec![0xac, 0x45, 0x23, 0x00]);
+        assert_eq!(nnes.get_register(Register::YIndex), 0x77);
+    }
+
+    #[test]
+    fn test_ldy_absolute_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::XIndex, 0x04);
+        nnes.memory_write_u8(0x3000 + 0x04, 0x88);
+        // LDY absolute,X: opcode 0xbc
+        nnes.play_test(vec![0xbc, 0x00, 0x30, 0x00]);
+        assert_eq!(nnes.get_register(Register::YIndex), 0x88);
+    }
+
+    // NEW: Tests for memory-mode shift/rotate instructions
+
+    #[test]
+    fn test_asl_zero_page() {
+        let mut nnes = NNES::new();
+        // Write a value with MSB set at address 0x50.
+        nnes.memory_write_u8(0x50, 0x80);
+        // ASL zero page: opcode 0x06, which shifts left; 0x80 << 1 = 0x00 and carry set.
+        nnes.play_test(vec![0x06, 0x50, 0x00]);
+        assert_eq!(nnes.memory_read_u8(0x50), 0x00);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+
+    #[test]
+    fn test_lsr_zero_page() {
+        let mut nnes = NNES::new();
+        // Write a value with LSB set at address 0x51.
+        nnes.memory_write_u8(0x51, 0x01);
+        // LSR zero page: opcode 0x46; 0x01 >> 1 = 0x00 and carry set.
+        nnes.play_test(vec![0x46, 0x51, 0x00]);
+        assert_eq!(nnes.memory_read_u8(0x51), 0x00);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+
+    #[test]
+    fn test_rol_zero_page() {
+        let mut nnes = NNES::new();
+        // Write a value at address 0x60.
+        nnes.memory_write_u8(0x60, 0x40);
+        // Ensure carry is false.
+        nnes.set_flag(Flag::Carry, false);
+        // ROL zero page: opcode 0x26; 0x40 << 1 = 0x80.
+        nnes.play_test(vec![0x26, 0x60, 0x00]);
+        assert_eq!(nnes.memory_read_u8(0x60), 0x80);
+    }
+
+    #[test]
+    fn test_ror_zero_page() {
+        let mut nnes = NNES::new();
+        // Write a value with LSB set at address 0x70.
+        nnes.memory_write_u8(0x70, 0x03);
+        // Set carry flag to true.
+        nnes.set_flag(Flag::Carry, true);
+        // ROR zero page: opcode 0x66; shifting right:
+        // Expected: 0x03 >> 1 = 0x01, with previous carry true becomes 0x81.
+        nnes.play_test(vec![0x66, 0x70, 0x00]);
+        assert_eq!(nnes.memory_read_u8(0x70), 0x81);
+        // Also check that the LSB (0x03's bit0) was pushed into carry.
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+
+    #[test]
+    fn test_asl_accumulator() {
+        let mut nnes = NNES::new();
+        // Set accumulator to 0x81 (1000_0001). ASL will shift left: result should be 0x02 and carry true.
+        nnes.set_register(Register::Accumulator, 0x81);
+        println!("ACC Before: {:08b}", nnes.get_register(Register::Accumulator));
+        // Opcode for ASL (accumulator mode) is 0x0a, then BRK.
+        nnes.play_test(vec![0x0a, 0x00]);
+        println!("ACC After: {:08b}", nnes.get_register(Register::Accumulator));
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x02);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+
+    #[test]
+    fn test_lsr_accumulator() {
+        let mut nnes = NNES::new();
+        // Set accumulator to 0x03 (0000_0011). LSR will shift right: result should be 0x01 and carry true.
+        nnes.set_register(Register::Accumulator, 0x03);
+        // Opcode for LSR (accumulator mode) is 0x4a, then BRK.
+        nnes.play_test(vec![0x4a, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x01);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+
+    #[test]
+    fn test_rol_accumulator() {
+        let mut nnes = NNES::new();
+        // Set accumulator to 0x40 (0100_0000) with carry flag false.
+        nnes.set_flag(Flag::Carry, false);
+        nnes.set_register(Register::Accumulator, 0x40);
+        // Opcode for ROL (accumulator mode) is 0x2a, then BRK.
+        nnes.play_test(vec![0x2a, 0x00]);
+        // 0x40 rotated left becomes 0x80; no carry is inserted.
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x80);
+        assert_eq!(nnes.get_flag(Flag::Carry), false);
+    }
+
+    #[test]
+    fn test_ror_accumulator() {
+        let mut nnes = NNES::new();
+        // Set accumulator to 0x02 (0000_0010) and carry flag true.
+        nnes.set_register(Register::Accumulator, 0x02);
+        nnes.set_flag(Flag::Carry, true);
+        // Opcode for ROR (accumulator mode) is 0x6a, then BRK.
+        nnes.play_test(vec![0x6a, 0x00]);
+        // 0x02 rotated right with carry set yields 0x81.
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x81);
+        // Carry flag becomes false (bit0 of 0x02 was 0).
+        assert_eq!(nnes.get_flag(Flag::Carry), false);
+    }
 }
