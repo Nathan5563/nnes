@@ -1,7 +1,7 @@
 use crate::nnes::NNES;
 
 pub enum Register {
-    ACCUMULATOR,
+    Accumulator,
     XIndex,
     YIndex,
 }
@@ -25,7 +25,7 @@ impl NNES {
 
     pub fn get_register(&self, register: Register) -> u8 {
         match register {
-            Register::ACCUMULATOR => self.reg_accumulator,
+            Register::Accumulator => self.reg_accumulator,
             Register::XIndex => self.reg_xindex,
             Register::YIndex => self.reg_yindex,
         }
@@ -33,7 +33,7 @@ impl NNES {
 
     pub fn set_register(&mut self, register: Register, value: u8) {
         match register {
-            Register::ACCUMULATOR => {
+            Register::Accumulator => {
                 self.reg_accumulator = value;
             }
             Register::XIndex => {

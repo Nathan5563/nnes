@@ -14,7 +14,7 @@ impl NNES {
         println!("Stack Pointer: {:02X}", self.get_stack_pointer());
         println!(
             "Accumulator: {:02X}",
-            self.get_register(Register::ACCUMULATOR)
+            self.get_register(Register::Accumulator)
         );
         println!("X Index: {:02X}", self.get_register(Register::XIndex));
         println!("Y Index: {:02X}", self.get_register(Register::YIndex));
