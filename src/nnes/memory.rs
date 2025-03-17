@@ -1,6 +1,6 @@
 use crate::nnes::{Register, NNES};
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressingMode {
     Implied,
     Accumulator,
@@ -151,5 +151,14 @@ impl NNES {
             AddressingMode::IndirectY => self.handle_indirect(RegisterOffset::YIndex),
             _ => 0,
         }
+    }
+
+    pub fn get_data(&mut self, mode: AddressingMode) -> u8 {
+        let op: u16 = self.get_operand(mode);
+        let mut data: u16 = op;
+        if mode != AddressingMode::Immediate {
+            data = self.memory_read_u8(op) as u16;
+        }
+        data as u8
     }
 }
