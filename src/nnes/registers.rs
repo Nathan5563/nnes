@@ -23,6 +23,11 @@ impl NNES {
         self.stack_pointer = value;
     }
 
+    pub fn set_stack_pointer_with_flags(&mut self, value: u8) {
+        self.set_stack_pointer(value);
+        self.update_op_flags(value);
+    }
+
     pub fn get_register(&self, register: Register) -> u8 {
         match register {
             Register::Accumulator => self.reg_accumulator,
@@ -43,6 +48,11 @@ impl NNES {
                 self.reg_yindex = value;
             }
         }
+    }
+
+    pub fn set_register_with_flags(&mut self, register: Register, value: u8) {
+        self.set_register(register, value);
+        self.update_op_flags(value);
     }
 
     pub fn reset_registers(&mut self) {
