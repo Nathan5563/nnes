@@ -96,6 +96,10 @@ impl NNES {
         }
     }
 
+    pub fn set_flags(&mut self, flags: u8) {
+        self.flags = flags;
+    }
+
     pub fn update_op_flags(&mut self, res: u8) {
         if res == 0 {
             self.set_flag(Flag::Zero, true);
