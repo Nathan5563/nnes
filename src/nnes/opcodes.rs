@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::nnes::{AddressingMode, Flag, Register, NNES};
+use crate::nnes::{types::*, AddressingMode, Flag, Register, NNES};
 
 pub struct OpCode {
     code: u8,
@@ -114,25 +114,25 @@ lazy_static! {
         OpCode::new(0x41, "EOR".to_string(), 2, 6, AddressingMode::IndirectX),
         OpCode::new(0x51, "EOR".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY),
         // SAL
-        OpCode::new(0x0a, "ASL".to_string(), 1, 2, AddressingMode::Implied),
+        OpCode::new(0x0a, "ASL".to_string(), 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x06, "ASL".to_string(), 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x16, "ASL".to_string(), 2, 6, AddressingMode::ZeroPageX),
         OpCode::new(0x0e, "ASL".to_string(), 3, 6, AddressingMode::Absolute),
         OpCode::new(0x1e, "ASL".to_string(), 3, 7, AddressingMode::AbsoluteX),
         // SHR
-        OpCode::new(0x4a, "LSR".to_string(), 1, 2, AddressingMode::Implied),
+        OpCode::new(0x4a, "LSR".to_string(), 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x46, "LSR".to_string(), 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x56, "LSR".to_string(), 2, 6, AddressingMode::ZeroPageX),
         OpCode::new(0x4e, "LSR".to_string(), 3, 6, AddressingMode::Absolute),
         OpCode::new(0x5e, "LSR".to_string(), 3, 7, AddressingMode::AbsoluteX),
         // RCL
-        OpCode::new(0x2a, "ROL".to_string(), 1, 2, AddressingMode::Implied),
+        OpCode::new(0x2a, "ROL".to_string(), 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x26, "ROL".to_string(), 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x36, "ROL".to_string(), 2, 6, AddressingMode::ZeroPageX),
         OpCode::new(0x2e, "ROL".to_string(), 3, 6, AddressingMode::Absolute),
         OpCode::new(0x3e, "ROL".to_string(), 3, 7, AddressingMode::AbsoluteX),
         // RCR
-        OpCode::new(0x6a, "ROR".to_string(), 1, 2, AddressingMode::Implied),
+        OpCode::new(0x6a, "ROR".to_string(), 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x66, "ROR".to_string(), 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x76, "ROR".to_string(), 2, 6, AddressingMode::ZeroPageX),
         OpCode::new(0x6e, "ROR".to_string(), 3, 6, AddressingMode::Absolute),
@@ -225,38 +225,32 @@ lazy_static! {
 impl NNES {
     pub fn handle_tax(&mut self) {
         let reg_acc: u8 = self.get_register(Register::Accumulator);
-        self.set_register(Register::XIndex, reg_acc);
-        self.update_op_flags(reg_acc);
+        self.set_register_with_flags(Register::XIndex, reg_acc);
     }
 
     pub fn handle_tay(&mut self) {
         let reg_acc: u8 = self.get_register(Register::Accumulator);
-        self.set_register(Register::YIndex, reg_acc);
-        self.update_op_flags(reg_acc);
+        self.set_register_with_flags(Register::YIndex, reg_acc);
     }
 
     pub fn handle_tsx(&mut self) {
         let stk_ptr: u8 = self.get_stack_pointer();
-        self.set_register(Register::XIndex, stk_ptr);
-        self.update_op_flags(stk_ptr);
+        self.set_register_with_flags(Register::XIndex, stk_ptr);
     }
 
     pub fn handle_txa(&mut self) {
         let reg_x: u8 = self.get_register(Register::XIndex);
-        self.set_register(Register::Accumulator, reg_x);
-        self.update_op_flags(reg_x);
+        self.set_register_with_flags(Register::Accumulator, reg_x);
     }
 
     pub fn handle_txs(&mut self) {
         let reg_x: u8 = self.get_register(Register::XIndex);
-        self.set_stack_pointer(reg_x);
-        self.update_op_flags(reg_x);
+        self.set_stack_pointer_with_flags(reg_x);
     }
 
     pub fn handle_tya(&mut self) {
         let reg_y: u8 = self.get_register(Register::YIndex);
-        self.set_register(Register::Accumulator, reg_y);
-        self.update_op_flags(reg_y);
+        self.set_register_with_flags(Register::Accumulator, reg_y);
     }
 
     pub fn handle_clc(&mut self) {
@@ -293,8 +287,7 @@ impl NNES {
         if mode != AddressingMode::Immediate {
             data = self.memory_read_u8(op) as u16;
         }
-        self.set_register(Register::Accumulator, data as u8);
-        self.update_op_flags(data as u8);
+        self.set_register_with_flags(Register::Accumulator, data as u8);
     }
 
     pub fn handle_ldx(&mut self, mode: AddressingMode) {
@@ -303,7 +296,7 @@ impl NNES {
         if mode != AddressingMode::Immediate {
             data = self.memory_read_u8(op) as u16;
         }
-        self.set_register(Register::XIndex, data as u8);
+        self.set_register_with_flags(Register::XIndex, data as u8);
     }
 
     pub fn handle_ldy(&mut self, mode: AddressingMode) {
@@ -312,7 +305,7 @@ impl NNES {
         if mode != AddressingMode::Immediate {
             data = self.memory_read_u8(op) as u16;
         }
-        self.set_register(Register::YIndex, data as u8);
+        self.set_register_with_flags(Register::YIndex, data as u8);
     }
 
     pub fn handle_sta(&mut self, mode: AddressingMode) {
@@ -343,7 +336,7 @@ impl NNES {
 
     pub fn handle_pla(&mut self) {
         let data: u8 = self.stack_pop();
-        self.set_register(Register::Accumulator, data);
+        self.set_register_with_flags(Register::Accumulator, data);
     }
 
     pub fn handle_plp(&mut self) {
@@ -351,18 +344,104 @@ impl NNES {
         self.set_flags(data);
     }
 
+    pub fn handle_and(&mut self, mode: AddressingMode) {
+        let data: u8 = self.get_data(mode);
+        let res: u8 = self.get_register(Register::Accumulator) & data as u8;
+        self.set_register_with_flags(Register::Accumulator, res);
+    }
+
+    pub fn handle_ora(&mut self, mode: AddressingMode) {
+        let data: u8 = self.get_data(mode);
+        let res: u8 = self.get_register(Register::Accumulator) | data;
+        self.set_register_with_flags(Register::Accumulator, res);
+    }
+
+    pub fn handle_eor(&mut self, mode: AddressingMode) {
+        let data: u8 = self.get_data(mode);
+        let res: u8 = self.get_register(Register::Accumulator) ^ data;
+        self.set_register_with_flags(Register::Accumulator, res);
+    }
+
+    fn shift(&mut self, mode: AddressingMode, left: bool, with_carry: bool) {
+        let cf: bool = self.get_flag(Flag::Carry);
+        if mode == AddressingMode::Accumulator {
+            let mut reg_acc: u8 = self.get_register(Register::Accumulator);
+            if left {
+                self.set_flag(Flag::Carry, (reg_acc & BIT_7) != 0);
+                reg_acc <<= 1;
+                if with_carry && cf {
+                    reg_acc |= BIT_0;
+                }
+            }
+            else {
+                self.set_flag(Flag::Carry, (reg_acc & BIT_0) != 0);
+                reg_acc >>= 1;
+                if with_carry && cf {
+                    reg_acc |= BIT_7;
+                }
+            }
+            self.set_register_with_flags(Register::Accumulator, reg_acc);
+        } 
+        else {
+            let op: u16 = self.get_operand(mode);
+            let mut data: u8 = self.memory_read_u8(op);
+            if left {
+                self.set_flag(Flag::Carry, (data & BIT_7) != 0);
+                data <<= 1;
+                if with_carry && cf {
+                    data |= BIT_0
+                }
+            }
+            else {
+                self.set_flag(Flag::Carry, (data & BIT_0) != 0);
+                data >>= 1;
+                if with_carry && cf {
+                    data |= BIT_7
+                }
+            }
+            self.memory_write_u8(op, data);
+            self.update_op_flags(data);
+        }
+    }
+
+    pub fn handle_asl(&mut self, mode: AddressingMode) {
+        self.shift(mode, true, false);
+    }
+
+    pub fn handle_lsr(&mut self, mode: AddressingMode) {
+        self.shift(mode, false, false);
+    }
+
+    pub fn handle_rol(&mut self, mode: AddressingMode) {
+        self.shift(mode, true, true);
+    }
+
+    pub fn handle_ror(&mut self, mode: AddressingMode) {
+        self.shift(mode, false, true);
+    }
+
+    pub fn handle_adc(&mut self, mode: AddressingMode) {
+        // TODO
+    }
+
+    pub fn handle_sbc(&mut self, mode: AddressingMode) {
+        // TODO
+    }
+
     pub fn handle_brk(&mut self) {
         self.set_flag(Flag::Break, true);
+    }
+
+    pub fn handle_nop(&mut self) {
+        return;
     }
 
     pub fn handle_inx(&mut self) {
         let reg_x: u8 = self.get_register(Register::XIndex);
         if reg_x == 0xff {
-            self.set_register(Register::XIndex, 0);
-            self.update_op_flags(0);
+            self.set_register_with_flags(Register::XIndex, 0);
         } else {
-            self.set_register(Register::XIndex, reg_x + 1);
-            self.update_op_flags(reg_x + 1);
+            self.set_register_with_flags(Register::XIndex, reg_x + 1);
         }
     }
 }

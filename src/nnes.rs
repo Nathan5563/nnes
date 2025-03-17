@@ -41,7 +41,7 @@ impl NNES {
             reg_accumulator: 0,
             reg_xindex: 0,
             reg_yindex: 0,
-            flags: 0,
+            flags: 0b00100000,
             memory: [0; 0xffff],
         }
     }
@@ -91,8 +91,18 @@ impl NNES {
                 0x08 => self.handle_php(),
                 0x68 => self.handle_pla(),
                 0x28 => self.handle_plp(),
+                0x29 | 0x25 | 0x35 | 0x2d | 0x3d | 0x39 | 0x21 | 0x31 => self.handle_and(mode),
+                0x09 | 0x05 | 0x15 | 0x0d | 0x1d | 0x19 | 0x01 | 0x11 => self.handle_ora(mode),
+                0x49 | 0x45 | 0x55 | 0x4d | 0x5d | 0x59 | 0x41 | 0x51 => self.handle_eor(mode),
+                0x0a | 0x06 | 0x16 | 0x0e | 0x1e => self.handle_asl(mode),
+                0x4a | 0x46 | 0x56 | 0x4e | 0x5e => self.handle_lsr(mode),
+                0x2a | 0x26 | 0x36 | 0x2e | 0x3e => self.handle_rol(mode),
+                0x6a | 0x66 | 0x76 | 0x6e | 0x7e => self.handle_ror(mode),
+                0x69 | 0x65 | 0x75 | 0x6d | 0x7d | 0x79 | 0x61 | 0x71 => self.handle_adc(mode),
+                0xe9 | 0xe5 | 0xf5 | 0xed | 0xfd | 0xf9 | 0xe1 | 0xf1 => self.handle_sbc(mode),
                 0xe8 => self.handle_inx(),
                 0x00 => self.handle_brk(),
+                0xea => self.handle_nop(),
                 _ => return,
             }
         }
