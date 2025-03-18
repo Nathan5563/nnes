@@ -607,4 +607,431 @@ mod test {
         // Carry flag becomes false (bit0 of 0x02 was 0).
         assert_eq!(nnes.get_flag(Flag::Carry), false);
     }
+
+    // ---------- ADC Instruction Tests ----------
+
+    #[test]
+    fn test_adc_immediate_no_carry_no_overflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x10);
+        // 0x10 + 0x20 = 0x30, no carry/overflow.
+        nnes.play_test(vec![0x69, 0x20, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x30);
+        assert!(!nnes.get_flag(Flag::Carry));
+        assert!(!nnes.get_flag(Flag::Overflow));
+    }
+
+    #[test]
+    fn test_adc_immediate_with_initial_carry() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x10);
+        nnes.set_flag(Flag::Carry, true);
+        // 0x10 + 0x20 + 1 = 0x31.
+        nnes.play_test(vec![0x69, 0x20, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x31);
+    }
+
+    #[test]
+    fn test_adc_immediate_overflow() {
+        let mut nnes = NNES::new();
+        // Example: 0x50 + 0x50 = 0xa0 produces signed overflow.
+        nnes.set_register(Register::Accumulator, 0x50);
+        nnes.play_test(vec![0x69, 0x50, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xa0);
+        assert!(nnes.get_flag(Flag::Overflow));
+    }
+
+    #[test]
+    fn test_adc_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x20);
+        // Write value 0x15 at zero page address 0x10.
+        nnes.memory_write_u8(0x10, 0x15);
+        nnes.play_test(vec![0x65, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x35);
+    }
+
+    #[test]
+    fn test_adc_zero_page_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x30);
+        nnes.set_register(Register::XIndex, 0x05);
+        // Write operand at address (0x1b + X=5) => 0x20, value 0x0f.
+        nnes.memory_write_u8(0x20, 0x0f);
+        nnes.play_test(vec![0x75, 0x1b, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x30 + 0x0f);
+    }
+
+    #[test]
+    fn test_adc_absolute() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x40);
+        // Write operand 0x20 at absolute address 0x1234.
+        nnes.memory_write_u8(0x1234, 0x20);
+        nnes.play_test(vec![0x6d, 0x34, 0x12, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x60);
+    }
+
+    #[test]
+    fn test_adc_absolute_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x10);
+        nnes.set_register(Register::XIndex, 0x04);
+        // Write operand 0x20 at effective address 0x2000 + 0x04 = 0x2004.
+        nnes.memory_write_u8(0x2004, 0x20);
+        nnes.play_test(vec![0x7d, 0x00, 0x20, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x30);
+    }
+
+    #[test]
+    fn test_adc_absolute_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x05);
+        nnes.set_register(Register::YIndex, 0x03);
+        // Write operand 0x0a at effective address 0x3000 + 0x03 = 0x3003.
+        nnes.memory_write_u8(0x3003, 0x0a);
+        nnes.play_test(vec![0x79, 0x00, 0x30, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x0f);
+    }
+
+    #[test]
+    fn test_adc_indirect_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x08);
+        nnes.set_register(Register::XIndex, 0x04);
+        // For ADC Indirect,X (opcode 0x61), operand 0x10.
+        // Effective pointer = 0x10 + X = 0x14; pointer at 0x14/0x15 points to 0x4000.
+        nnes.memory_write_u8(0x14, 0x00);
+        nnes.memory_write_u8(0x15, 0x40);
+        // Write operand 0x22 at 0x4000.
+        nnes.memory_write_u8(0x4000, 0x22);
+        nnes.play_test(vec![0x61, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x08 + 0x22);
+    }
+
+    #[test]
+    fn test_adc_indirect_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x15);
+        nnes.set_register(Register::YIndex, 0x03);
+        // For ADC Indirect,Y (opcode 0x71), operand 0x20.
+        // Pointer at 0x20 holds base address 0x5000; effective address = 0x5000 + 0x03.
+        nnes.memory_write_u8(0x20, 0x00);
+        nnes.memory_write_u8(0x21, 0x50);
+        nnes.memory_write_u8(0x5003, 0x0a);
+        nnes.play_test(vec![0x71, 0x20, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x15 + 0x0a);
+    }
+
+    // ---------- SBC Instruction Tests ----------
+
+    #[test]
+    fn test_sbc_immediate_no_borrow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x50);
+        nnes.set_flag(Flag::Carry, true);
+        // SBC Immediate (opcode 0xe9): 0x50 - 0x10 = 0x40.
+        nnes.play_test(vec![0xe9, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x40);
+        // No borrow: Carry remains set.
+        assert!(nnes.get_flag(Flag::Carry));
+    }
+
+    #[test]
+    fn test_sbc_immediate_with_borrow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x50);
+        nnes.set_flag(Flag::Carry, false);
+        // SBC Immediate: 0x50 - 0x10 - 1 = 0x3f.
+        nnes.play_test(vec![0xe9, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x3f);
+    }
+
+    #[test]
+    fn test_sbc_immediate_underflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x05);
+        nnes.set_flag(Flag::Carry, true);
+        // Underflow: 0x05 - 0x10 wraps to 0xf5.
+        nnes.play_test(vec![0xe9, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xf5);
+        // Borrow occurred, so Carry is cleared.
+        assert!(!nnes.get_flag(Flag::Carry));
+    }
+
+    #[test]
+    fn test_sbc_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x70);
+        nnes.set_flag(Flag::Carry, true);
+        nnes.memory_write_u8(0x10, 0x20);
+        nnes.play_test(vec![0xe5, 0x10, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x50);
+    }
+
+    #[test]
+    fn test_sbc_zero_page_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x80);
+        nnes.set_flag(Flag::Carry, true);
+        nnes.set_register(Register::XIndex, 0x04);
+        // Write operand at address (0x30+0x04 = 0x34) with value 0x10.
+        nnes.memory_write_u8(0x34, 0x10);
+        nnes.play_test(vec![0xf5, 0x30, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x80 - 0x10);
+    }
+
+    #[test]
+    fn test_sbc_absolute() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x90);
+        nnes.set_flag(Flag::Carry, true);
+        nnes.memory_write_u8(0x1234, 0x20);
+        nnes.play_test(vec![0xed, 0x34, 0x12, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x90 - 0x20);
+    }
+
+    #[test]
+    fn test_sbc_absolute_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x80);
+        nnes.set_flag(Flag::Carry, true);
+        nnes.set_register(Register::XIndex, 0x04);
+        nnes.memory_write_u8(0x2004, 0x10);
+        nnes.play_test(vec![0xfd, 0x00, 0x20, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x80 - 0x10);
+    }
+
+    #[test]
+    fn test_sbc_absolute_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x70);
+        nnes.set_flag(Flag::Carry, true);
+        nnes.set_register(Register::YIndex, 0x03);
+        nnes.memory_write_u8(0x3003, 0x10);
+        nnes.play_test(vec![0xf9, 0x00, 0x30, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x70 - 0x10);
+    }
+
+    #[test]
+    fn test_sbc_indirect_x() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x50);
+        nnes.set_flag(Flag::Carry, true);
+        nnes.set_register(Register::XIndex, 0x03);
+        // For SBC Indirect,X (opcode 0xe1) with operand 0x60:
+        // Effective pointer = 0x60 + X (0x03) => 0x63; pointer at 0x63/0x64 points to 0x7000.
+        nnes.memory_write_u8(0x63, 0x00);
+        nnes.memory_write_u8(0x64, 0x70);
+        nnes.memory_write_u8(0x7000, 0x20);
+        nnes.play_test(vec![0xe1, 0x60, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x50 - 0x20);
+    }
+
+    #[test]
+    fn test_sbc_indirect_y() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::Accumulator, 0x60);
+        nnes.set_flag(Flag::Carry, true);
+        nnes.set_register(Register::YIndex, 0x02);
+        // For SBC Indirect,Y (opcode 0xf1), operand 0x80.
+        // Pointer at 0x80 holds base address 0x2020; effective = 0x2020 + 0x02.
+        nnes.memory_write_u8(0x80, 0x20);
+        nnes.memory_write_u8(0x81, 0x20);
+        nnes.memory_write_u8(0x2022, 0x10);
+        nnes.play_test(vec![0xf1, 0x80, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x60 - 0x10);
+    }
+
+    #[test]
+    fn test_inc_no_overflow() {
+        let mut nnes = NNES::new();
+        // Write 0x10 at zero page address 0x40, INC should increment to 0x11.
+        nnes.memory_write_u8(0x40, 0x10);
+        nnes.play_test(vec![0xe6, 0x40, 0x00]); // INC zero page, BRK
+        assert_eq!(nnes.memory_read_u8(0x40), 0x11);
+    }
+    
+    #[test]
+    fn test_inc_overflow() {
+        let mut nnes = NNES::new();
+        // Write 0xff at zero page address 0x50, INC should wrap to 0x00.
+        nnes.memory_write_u8(0x50, 0xff);
+        nnes.play_test(vec![0xe6, 0x50, 0x00]); // INC zero page, BRK
+        assert_eq!(nnes.memory_read_u8(0x50), 0x00);
+    }
+    
+    #[test]
+    fn test_iny_no_overflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::YIndex, 0x10);
+        nnes.play_test(vec![0xc8, 0x00]); // INY, BRK; 0x10 -> 0x11
+        assert_eq!(nnes.get_register(Register::YIndex), 0x11);
+    }
+    
+    #[test]
+    fn test_iny_overflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::YIndex, 0xff);
+        nnes.play_test(vec![0xc8, 0x00]); // INY, BRK; 0xff -> 0x00
+        assert_eq!(nnes.get_register(Register::YIndex), 0x00);
+    }
+    
+    #[test]
+    fn test_dex_no_overflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::XIndex, 0x20);
+        nnes.play_test(vec![0xca, 0x00]); // DEX, BRK; 0x20 -> 0x1F
+        assert_eq!(nnes.get_register(Register::XIndex), 0x1F);
+    }
+    
+    #[test]
+    fn test_dex_overflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::XIndex, 0x00);
+        nnes.play_test(vec![0xca, 0x00]); // DEX, BRK; 0x00 -> 0xff
+        assert_eq!(nnes.get_register(Register::XIndex), 0xff);
+    }
+    
+    #[test]
+    fn test_dey_no_overflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::YIndex, 0x20);
+        nnes.play_test(vec![0x88, 0x00]); // DEY, BRK; 0x20 -> 0x1F
+        assert_eq!(nnes.get_register(Register::YIndex), 0x1F);
+    }
+    
+    #[test]
+    fn test_dey_overflow() {
+        let mut nnes = NNES::new();
+        nnes.set_register(Register::YIndex, 0x00);
+        nnes.play_test(vec![0x88, 0x00]); // DEY, BRK; 0x00 -> 0xff
+        assert_eq!(nnes.get_register(Register::YIndex), 0xff);
+    }
+    
+    #[test]
+    fn test_dec_no_underflow() {
+        let mut nnes = NNES::new();
+        // Write 0x11 at zero page address 0x60, DEC should decrement to 0x10.
+        nnes.memory_write_u8(0x60, 0x11);
+        nnes.play_test(vec![0xc6, 0x60, 0x00]); // DEC zero page, BRK
+        assert_eq!(nnes.memory_read_u8(0x60), 0x10);
+    }
+    
+    #[test]
+    fn test_dec_underflow() {
+        let mut nnes = NNES::new();
+        // Write 0x00 at zero page address 0x70, DEC should wrap to 0xff.
+        nnes.memory_write_u8(0x70, 0x00);
+        nnes.play_test(vec![0xc6, 0x70, 0x00]); // DEC zero page, BRK
+        assert_eq!(nnes.memory_read_u8(0x70), 0xff);
+    }
+
+    // New tests for CMP instruction
+    #[test]
+    fn test_cmp_immediate_equal() {
+        let mut nnes = NNES::new();
+        // LDA #$55, then CMP #$55, BRK
+        nnes.play_test(vec![0xA9, 0x55, 0xC9, 0x55, 0x00]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x55);
+        assert_eq!(nnes.get_flag(Flag::Zero), true);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    #[test]
+    fn test_cmp_immediate_less() {
+        let mut nnes = NNES::new();
+        // LDA #$40, then CMP #$50, BRK: 0x40 < 0x50 so Carry should be false
+        nnes.play_test(vec![0xA9, 0x40, 0xC9, 0x50, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), false);
+    }
+    
+    #[test]
+    fn test_cmp_immediate_greater() {
+        let mut nnes = NNES::new();
+        // LDA #$60, then CMP #$50, BRK: 0x60 >= 0x50 so Carry should be true
+        nnes.play_test(vec![0xA9, 0x60, 0xC9, 0x50, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    #[test]
+    fn test_cmp_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x10, 0x55);
+        // LDA #$55, then CMP (zero page) using opcode 0xC5 at address 0x10, then BRK
+        nnes.play_test(vec![0xA9, 0x55, 0xC5, 0x10, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    // New tests for CPX (cmx) instruction
+    #[test]
+    fn test_cpx_immediate_equal() {
+        let mut nnes = NNES::new();
+        // LDX #$30, then CPX immediate (opcode 0xE0) with operand 0x30, then BRK
+        nnes.play_test(vec![0xA2, 0x30, 0xE0, 0x30, 0x00]);
+        assert_eq!(nnes.get_register(Register::XIndex), 0x30);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    #[test]
+    fn test_cpx_immediate_less() {
+        let mut nnes = NNES::new();
+        // LDX #$20, then CPX immediate with operand 0x30, BRK: Carry should be false.
+        nnes.play_test(vec![0xA2, 0x20, 0xE0, 0x30, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), false);
+    }
+    
+    #[test]
+    fn test_cpx_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x10, 0x40);
+        // LDX #$40, then CPX zero page (opcode 0xE4) at address 0x10, then BRK
+        nnes.play_test(vec![0xA2, 0x40, 0xE4, 0x10, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    #[test]
+    fn test_cpx_absolute() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x1234, 0x30);
+        // LDX #$30, then CPX absolute (opcode 0xEC) at address 0x1234, then BRK
+        nnes.play_test(vec![0xA2, 0x30, 0xEC, 0x34, 0x12, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    // New tests for CPY (cmy) instruction
+    #[test]
+    fn test_cpy_immediate_equal() {
+        let mut nnes = NNES::new();
+        // LDY #$30, then CPY immediate (opcode 0xC0) with operand 0x30, then BRK
+        nnes.play_test(vec![0xA0, 0x30, 0xC0, 0x30, 0x00]);
+        assert_eq!(nnes.get_register(Register::YIndex), 0x30);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    #[test]
+    fn test_cpy_immediate_less() {
+        let mut nnes = NNES::new();
+        // LDY #$20, then CPY immediate with operand 0x30, BRK: Carry should be false.
+        nnes.play_test(vec![0xA0, 0x20, 0xC0, 0x30, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), false);
+    }
+    
+    #[test]
+    fn test_cpy_zero_page() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x10, 0x50);
+        // LDY #$50, then CPY zero page (opcode 0xC4) at address 0x10, then BRK
+        nnes.play_test(vec![0xA0, 0x50, 0xC4, 0x10, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
+    
+    #[test]
+    fn test_cpy_absolute() {
+        let mut nnes = NNES::new();
+        nnes.memory_write_u8(0x1234, 0x30);
+        // LDY #$30, then CPY absolute (opcode 0xCC) at address 0x1234, then BRK
+        nnes.play_test(vec![0xA0, 0x30, 0xCC, 0x34, 0x12, 0x00]);
+        assert_eq!(nnes.get_flag(Flag::Carry), true);
+    }
 }
