@@ -100,9 +100,17 @@ impl NNES {
                 0x6a | 0x66 | 0x76 | 0x6e | 0x7e => self.handle_ror(mode),
                 0x69 | 0x65 | 0x75 | 0x6d | 0x7d | 0x79 | 0x61 | 0x71 => self.handle_adc(mode),
                 0xe9 | 0xe5 | 0xf5 | 0xed | 0xfd | 0xf9 | 0xe1 | 0xf1 => self.handle_sbc(mode),
+                0xe6 | 0xf6 | 0xee | 0xfe => self.handle_inc(mode),
                 0xe8 => self.handle_inx(),
+                0xc8 => self.handle_iny(),
+                0xc6 | 0xd6 | 0xce | 0xde => self.handle_dec(mode),
+                0xca => self.handle_dex(),
+                0x88 => self.handle_dey(),
                 0x00 => self.handle_brk(),
                 0xea => self.handle_nop(),
+                0xc9 | 0xc5 | 0xd5 | 0xcd | 0xdd | 0xd9 | 0xc1 | 0xd1 => self.handle_cmp(mode),
+                0xe0 | 0xe4 | 0xec => self.handle_cmx(mode),
+                0xc0 | 0xc4 | 0xcc => self.handle_cmy(mode),
                 _ => return,
             }
         }

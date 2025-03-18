@@ -372,8 +372,7 @@ impl NNES {
                 if with_carry && cf {
                     reg_acc |= BIT_0;
                 }
-            }
-            else {
+            } else {
                 self.set_flag(Flag::Carry, (reg_acc & BIT_0) != 0);
                 reg_acc >>= 1;
                 if with_carry && cf {
@@ -381,8 +380,7 @@ impl NNES {
                 }
             }
             self.set_register_with_flags(Register::Accumulator, reg_acc);
-        } 
-        else {
+        } else {
             let op: u16 = self.get_operand(mode);
             let mut data: u8 = self.memory_read_u8(op);
             if left {
@@ -391,8 +389,7 @@ impl NNES {
                 if with_carry && cf {
                     data |= BIT_0
                 }
-            }
-            else {
+            } else {
                 self.set_flag(Flag::Carry, (data & BIT_0) != 0);
                 data >>= 1;
                 if with_carry && cf {
@@ -420,12 +417,119 @@ impl NNES {
         self.shift(mode, false, true);
     }
 
+    fn add(&mut self, num1: u8, mut num2: u8, twos_complement: bool, with_carry: bool) -> u8 {
+        let mut cbit: u8 = 0;
+        if self.get_flag(Flag::Carry) && with_carry {
+            cbit = 1;
+            self.set_flag(Flag::Carry, false);
+        }
+        let mut res: u16;
+        if twos_complement {
+            num2 = num2.wrapping_neg();
+            cbit ^= 1;
+            res = num1 as u16 + num2 as u16;
+            if with_carry {
+                res -= cbit as u16;
+            }
+        } else {
+            res = num1 as u16 + num2 as u16;
+            if with_carry {
+                res += cbit as u16;
+            }
+        }
+        if with_carry {
+            if res & UPPER_BYTE as u16 != 0 {
+                self.set_flag(Flag::Carry, true);
+            }
+            res &= LOWER_BYTE;
+            if (num1 ^ res as u8) & (num2 ^ res as u8) & BIT_7 != 0 {
+                self.set_flag(Flag::Overflow, true);
+            } else {
+                self.set_flag(Flag::Overflow, false);
+            }
+        }
+        else {
+            res &= LOWER_BYTE;
+        }
+        res as u8
+    }
+
     pub fn handle_adc(&mut self, mode: AddressingMode) {
-        // TODO
+        let reg_acc: u8 = self.get_register(Register::Accumulator);
+        let data: u8 = self.get_data(mode);
+        let sum: u8 = self.add(reg_acc, data, false, true);
+        self.set_register_with_flags(Register::Accumulator, sum);
     }
 
     pub fn handle_sbc(&mut self, mode: AddressingMode) {
-        // TODO
+        let reg_acc: u8 = self.get_register(Register::Accumulator);
+        let data: u8 = self.get_data(mode);
+        let difference: u8 = self.add(reg_acc, data, true, true);
+        self.set_register_with_flags(Register::Accumulator, difference);
+    }
+
+    pub fn handle_inc(&mut self, mode: AddressingMode) {
+        let op: u16 = self.get_operand(mode);
+        let mut data: u8 = self.memory_read_u8(op);
+        if data == 0xff {
+            data = 0;
+        } else {
+            data += 1;
+        }
+        self.memory_write_u8(op, data);
+        self.update_op_flags(data);
+    }
+
+    pub fn handle_inx(&mut self) {
+        let mut reg_x: u8 = self.get_register(Register::XIndex);
+        if reg_x == 0xff {
+            reg_x = 0;
+        } else {
+            reg_x += 1;
+        }
+        self.set_register_with_flags(Register::XIndex, reg_x);
+    }
+
+    pub fn handle_iny(&mut self) {
+        let mut reg_y: u8 = self.get_register(Register::YIndex);
+        if reg_y == 0xff {
+            reg_y = 0;
+        } else {
+            reg_y += 1;
+        }
+        self.set_register_with_flags(Register::YIndex, reg_y);
+    }
+
+    pub fn handle_dec(&mut self, mode: AddressingMode) {
+        let op: u16 = self.get_operand(mode);
+        let mut data: u8 = self.memory_read_u8(op);
+        if data == 0 {
+            data = 0xff;
+        } else {
+            data -= 1;
+        }
+        self.memory_write_u8(op, data);
+        self.update_op_flags(data);
+    }
+
+    pub fn handle_dex(&mut self) {
+        let mut reg_x: u8 = self.get_register(Register::XIndex);
+        if reg_x == 0 {
+            reg_x = 0xff;
+        } else {
+            reg_x -= 1;
+        }
+        self.set_register_with_flags(Register::XIndex, reg_x);
+    }
+
+    pub fn handle_dey(&mut self) {
+        let mut reg_y: u8 = self.get_register(Register::YIndex);
+        if reg_y == 0 {
+            reg_y = 0xff;
+        } else {
+            reg_y -= 1;
+        }
+        self.set_register_with_flags(Register::YIndex, reg_y);
     }
 
     pub fn handle_brk(&mut self) {
@@ -436,12 +540,39 @@ impl NNES {
         return;
     }
 
-    pub fn handle_inx(&mut self) {
-        let reg_x: u8 = self.get_register(Register::XIndex);
-        if reg_x == 0xff {
-            self.set_register_with_flags(Register::XIndex, 0);
+    pub fn handle_cmp(&mut self, mode: AddressingMode) {
+        let reg_acc: u8 = self.get_register(Register::Accumulator);
+        let data: u8 = self.get_data(mode);
+        let diff = self.add(reg_acc, data, true, false);
+        self.update_op_flags(diff);
+        if reg_acc >= data {
+            self.set_flag(Flag::Carry, true);
         } else {
-            self.set_register_with_flags(Register::XIndex, reg_x + 1);
+            self.set_flag(Flag::Carry, false);
+        }
+    }
+
+    pub fn handle_cmx(&mut self, mode: AddressingMode) {
+        let reg_x: u8 = self.get_register(Register::XIndex);
+        let data: u8 = self.get_data(mode);
+        let diff = self.add(reg_x, data, true, false);
+        self.update_op_flags(diff);
+        if reg_x >= data {
+            self.set_flag(Flag::Carry, true);
+        } else {
+            self.set_flag(Flag::Carry, false);
+        }
+    }
+
+    pub fn handle_cmy(&mut self, mode: AddressingMode) {
+        let reg_y: u8 = self.get_register(Register::YIndex);
+        let data: u8 = self.get_data(mode);
+        let diff = self.add(reg_y, data, true, false);
+        self.update_op_flags(diff);
+        if reg_y >= data {
+            self.set_flag(Flag::Carry, true);
+        } else {
+            self.set_flag(Flag::Carry, false);
         }
     }
 }
