@@ -78,13 +78,13 @@ impl NNES {
     }
 
     pub fn stack_push_u16(&mut self, data: u16) {
+        self.stack_push_u8((data >> 8) as u8);
         self.stack_push_u8((data & LOWER_BYTE) as u8);
-        self.stack_push_u8((data & UPPER_BYTE) as u8);
     }
 
     pub fn stack_pop_u16(&mut self) -> u16 {
-        let upper_byte: u8 = self.stack_pop_u8();
         let lower_byte: u8 = self.stack_pop_u8();
+        let upper_byte: u8 = self.stack_pop_u8();
         ((upper_byte as u16) << 8) | (lower_byte as u16)
     }
 
