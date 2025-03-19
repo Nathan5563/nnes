@@ -531,6 +531,7 @@ impl NNES {
     }
 
     pub fn handle_brk(&mut self, exit: &mut bool) {
+        self.set_program_counter(self.get_program_counter() + 1); // implied padding byte
         self.stack_push_u16(self.get_program_counter());
         self.handle_php();
         let irq = self.memory_read_u16(0xfffe);
