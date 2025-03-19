@@ -562,10 +562,8 @@ mod test {
         let mut nnes = NNES::new();
         // Set accumulator to 0x81 (1000_0001). ASL will shift left: result should be 0x02 and carry true.
         nnes.set_register(Register::Accumulator, 0x81);
-        println!("ACC Before: {:08b}", nnes.get_register(Register::Accumulator));
         // Opcode for ASL (accumulator mode) is 0x0a, then BRK.
         nnes.play_test(vec![0x0a, 0x00]);
-        println!("ACC After: {:08b}", nnes.get_register(Register::Accumulator));
         assert_eq!(nnes.get_register(Register::Accumulator), 0x02);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
@@ -1094,5 +1092,115 @@ mod test {
         nnes.run();
         assert_eq!(nnes.get_register(Register::Accumulator), 0xcc);
     }
-}
 
+    // Test for JSR and RTS: opcodes 0x20 and 0x60.
+    #[test]
+    fn test_jsr_and_rts() {
+        let mut nnes = NNES::new();
+        // Build a program that calls a subroutine and then returns.
+        // Layout:
+        // $8000: JSR $8006
+        // $8003: NOP (dummy opcode, e.g., 0xea)
+        // $8004,5: (should not be executed)
+        // $8006: RTS
+        // Ending with BRK at $8006.
+        let program = vec![
+            0x20, 0x04, 0x80, // JSR $8004
+            0x00, 0xa9, 0x30,  // (dummy)
+            0x60,             // RTS (subroutine at $8005)
+            0x00,             // BRK to quit execution
+        ];
+        nnes.play_test(program);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x30);
+        let _ = nnes.stack_pop_u8();
+        assert_eq!(nnes.stack_pop_u16(), 0x8004, "RTS did not return to the instruction following the JSR");
+    }
+
+    // Test for RTI: opcode 0x40.
+    #[test]
+    fn test_rti() {
+        let mut nnes = NNES::new();
+        // Simulate a situation where the status and return address are on the stack.
+        // Let the fake return address be $1234 (stored as low, then high) and
+        // fake status as 0b1010_1010.
+        //
+        // Note: The 6502 RTI expects the return address pushed is one less than the actual.
+        nnes.stack_push_u16(0x322);
+        nnes.stack_push_u8(0b10101010); // fake status
+        nnes.memory_write_u8(0x322, 0x00);
+        // Program: RTI.
+        let program = vec![0x40];
+        nnes.play_test(program);
+        // RTI should restore PC to $323 and the status register accordingly.
+        let _ = nnes.stack_pop_u8();
+        assert_eq!(nnes.stack_pop_u16(), 0x323, "RTI did not restore the correct program counter");
+        assert_eq!(nnes.get_flags(), 0b10111010, "RTI did not restore the correct status register");
+    }
+
+    // Test for BEQ (branch if equal): opcode 0xf0.
+    #[test]
+    fn test_branch_beq_taken() {
+        let branch_offset: i8 = 3;
+        let offset_byte = branch_offset as u8;
+        let mut nnes = NNES::new();
+        // Set Zero flag so branch is taken.
+        nnes.set_flag(Flag::Zero, true);
+        // Program: BEQ offset, NOP then BRK.
+        // BEQ is 2 bytes long, so expected PC = starting PC + 2 + offset.
+        let program = vec![0xf0, offset_byte, 0xa9, 0x50, 0xea, 0x00];
+        nnes.play_test(program);
+        let _ = nnes.stack_pop_u8();
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x00, "BAAAAAA");
+        assert_eq!(nnes.stack_pop_u16(), 0x8006, "BEQ did not branch when Zero flag was set");
+    }
+
+    #[test]
+    fn test_branch_beq_not_taken() {
+        let branch_offset: i8 = 3;
+        let offset_byte = branch_offset as u8;
+        let mut nnes = NNES::new();
+        // Clear Zero flag so branch is not taken.
+        nnes.set_flag(Flag::Zero, false);
+        // Program: BEQ offset, NOP then BRK.
+        // Since branch is not taken, PC should only advance by 2.
+        let program = vec![0xf0, offset_byte, 0xea, 0x00];
+        nnes.play_test(program);
+        let _ = nnes.stack_pop_u8();
+        assert_eq!(nnes.stack_pop_u16(), 0x8000 + 4, "BEQ incorrectly branched when Zero flag was clear");
+    }
+
+    // Test for BIT Zero Page: opcode 0x24.
+    #[test]
+    fn test_bit_zeropage() {
+        let mut nnes = NNES::new();
+        // Set memory at zero page $10 to 0b1100_0000.
+        nnes.memory_write_u8(0x10, 0b1100_0000);
+        // Set accumulator to 0x00 so that A & M == 0 (setting Zero flag).
+        nnes.set_register(Register::Accumulator, 0x00);
+        // Program: BIT $10 then BRK.
+        let program = vec![0x24, 0x10, 0x00];
+        nnes.play_test(program);
+        // BIT should set the Zero flag and also the Negative (bit 7) and Overflow (bit 6) flags.
+        assert!(nnes.get_flag(Flag::Zero), "BIT zero page did not set Zero flag when expected");
+        assert!(nnes.get_flag(Flag::Negative), "BIT zero page did not set Negative flag based on bit 7");
+        assert!(nnes.get_flag(Flag::Overflow), "BIT zero page did not set Overflow flag based on bit 6");
+    }
+
+    // Test for BIT Absolute: opcode 0x2c.
+    #[test]
+    fn test_bit_absolute() {
+        let mut nnes = NNES::new();
+        // Set memory at address $2000 to 0b0100_0000.
+        nnes.memory_write_u8(0x2000, 0b01000000);
+        // Set accumulator to 0x00 so that A & M == 0 (setting Zero flag).
+        nnes.set_register(Register::Accumulator, 0x00);
+        // Program: BIT $2000 then BRK.
+        // Instruction bytes: [0x2c, low byte, high byte, 0x00]
+        let program = vec![0x2c, 0x00, 0x20, 0x00];
+        nnes.play_test(program);
+        // BIT should set the Zero flag, leave Negative clear (bit 7 is 0), and set Overflow (bit 6 is 1).
+        assert!(nnes.get_flag(Flag::Zero), "BIT absolute did not set Zero flag when expected");
+        assert!(!nnes.get_flag(Flag::Negative), "BIT absolute incorrectly set Negative flag");
+        assert!(nnes.get_flag(Flag::Overflow), "BIT absolute did not set Overflow flag as expected");
+    }
+}
