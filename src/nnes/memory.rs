@@ -1,4 +1,4 @@
-use crate::nnes::{Register, NNES};
+use crate::nnes::{Register, NNES, LOWER_BYTE, UPPER_BYTE};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressingMode {
@@ -53,7 +53,7 @@ impl NNES {
         self.memory[addr as usize + 1] = high as u8;
     }
 
-    pub fn stack_push(&mut self, data: u8) {
+    pub fn stack_push_u8(&mut self, data: u8) {
         let mut stk_ptr: u8 = self.get_stack_pointer();
         self.memory_write_u8(STACK_OFFSET + stk_ptr as u16, data);
         if stk_ptr == 0 {
@@ -65,7 +65,7 @@ impl NNES {
         self.set_stack_pointer(stk_ptr);
     }
 
-    pub fn stack_pop(&mut self) -> u8 {
+    pub fn stack_pop_u8(&mut self) -> u8 {
         let mut stk_ptr: u8 = self.get_stack_pointer();
         if stk_ptr == 0xff {
             stk_ptr = 0;
@@ -77,8 +77,19 @@ impl NNES {
         self.memory_read_u8(STACK_OFFSET + stk_ptr as u16)
     }
 
+    pub fn stack_push_u16(&mut self, data: u16) {
+        self.stack_push_u8((data & LOWER_BYTE) as u8);
+        self.stack_push_u8((data & UPPER_BYTE) as u8);
+    }
+
+    pub fn stack_pop_u16(&mut self) -> u16 {
+        let upper_byte: u8 = self.stack_pop_u8();
+        let lower_byte: u8 = self.stack_pop_u8();
+        ((upper_byte as u16) << 8) | (lower_byte as u16)
+    }
+
     pub fn reset_memory(&mut self) {
-        self.memory = [0; 0xffff];
+        self.memory = [0; 0x10000];
     }
 
     fn handle_immediate(&mut self) -> u16 {
