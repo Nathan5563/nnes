@@ -218,7 +218,7 @@ mod test {
         // Initial SP is 0xff. PHA writes to STACK_OFFSET+0xff and decrements SP.
         nnes.play_test(vec![0x48, 0x00]); // PHA, BRK
         assert_eq!(nnes.memory_read_u8(STACK_OFFSET + 0xff), 0xAA);
-        assert_eq!(nnes.get_stack_pointer(), 0xfe);
+        assert_eq!(nnes.get_stack_pointer(), 0xfb);
     }
 
     // Test PHA when SP is 0 so that it wraps to 0xff.
@@ -229,7 +229,7 @@ mod test {
         nnes.set_stack_pointer(0); // simulate stack underflow condition.
         nnes.play_test(vec![0x48, 0x00]); // PHA, BRK
         assert_eq!(nnes.memory_read_u8(STACK_OFFSET + 0), 0x77);
-        assert_eq!(nnes.get_stack_pointer(), 0xff);
+        assert_eq!(nnes.get_stack_pointer(), 0xfc);
     }
 
     // Test PHP in normal (no wrap) scenario.
@@ -239,8 +239,8 @@ mod test {
         nnes.set_flags(0b01101011);
         // Initial SP is 0xff. PHP writes flags at STACK_OFFSET+0xff and decrements SP.
         nnes.play_test(vec![0x08, 0x00]); // PHP, BRK
-        assert_eq!(nnes.memory_read_u8(STACK_OFFSET + 0xff), 0b01101011);
-        assert_eq!(nnes.get_stack_pointer(), 0xfe);
+        assert_eq!(nnes.memory_read_u8(STACK_OFFSET + 0xff), 0b01111011);
+        assert_eq!(nnes.get_stack_pointer(), 0xfb);
     }
 
     // Test PHP when SP is 0 so that it wraps to 0xff.
@@ -250,8 +250,8 @@ mod test {
         nnes.set_flags(0b11001100);
         nnes.set_stack_pointer(0);
         nnes.play_test(vec![0x08, 0x00]); // PHP, BRK
-        assert_eq!(nnes.memory_read_u8(STACK_OFFSET + 0), 0b11001100);
-        assert_eq!(nnes.get_stack_pointer(), 0xff);
+        assert_eq!(nnes.memory_read_u8(STACK_OFFSET + 0), 0b11011100);
+        assert_eq!(nnes.get_stack_pointer(), 0xfc);
     }
 
     // Test a sequence: PHA then PLA restores the Accumulator (normal case).
@@ -262,7 +262,7 @@ mod test {
         // PHA pushes 0x55 (SP: 0xff -> 0xfe) then PLA pops it back (SP: 0xfe -> 0xff).
         nnes.play_test(vec![0x48, 0x68, 0x00]); // PHA, PLA, BRK
         assert_eq!(nnes.get_register(Register::Accumulator), 0x55);
-        assert_eq!(nnes.get_stack_pointer(), 0xff);
+        assert_eq!(nnes.get_stack_pointer(), 0xfc);
     }
 
     // Test PLA wrapping: if SP is 0xff the PLA resets it to 0 before reading.
@@ -271,10 +271,10 @@ mod test {
         let mut nnes = NNES::new();
         nnes.set_stack_pointer(0xff);
         // Manually fill stack location at STACK_OFFSET+0 to simulate a previous push.
-        nnes.memory_write_u8(STACK_OFFSET + 0, 0x77);
+        nnes.memory_write_u8(STACK_OFFSET, 0x77);
         nnes.play_test(vec![0x68, 0x00]); // PLA, BRK
         assert_eq!(nnes.get_register(Register::Accumulator), 0x77);
-        assert_eq!(nnes.get_stack_pointer(), 0);
+        assert_eq!(nnes.get_stack_pointer(), 0xfd);
     }
 
     // Test a sequence: PHP then PLP restores the flags (normal case).
@@ -285,7 +285,7 @@ mod test {
         // PHP pushes the flags (SP: 0xff -> 0xfe) then PLP pops them back (SP: 0xfe -> 0xff).
         nnes.play_test(vec![0x08, 0x28, 0x00]); // PHP, PLP, BRK
         assert_eq!(nnes.get_flags(), 0b00110011);
-        assert_eq!(nnes.get_stack_pointer(), 0xff);
+        assert_eq!(nnes.get_stack_pointer(), 0xfc);
     }
 
     // Test PLP wrapping: if SP is 0xff then PLP resets it to 0 before reading.
@@ -294,10 +294,10 @@ mod test {
         let mut nnes = NNES::new();
         nnes.set_stack_pointer(0xff);
         // Manually fill stack location at STACK_OFFSET+0 to simulate a pushed flags value.
-        nnes.memory_write_u8(STACK_OFFSET + 0, 0b01010101);
+        nnes.memory_write_u8(STACK_OFFSET, 0b01010101);
         nnes.play_test(vec![0x28, 0x00]); // PLP, BRK
         assert_eq!(nnes.get_flags(), 0b01010101);
-        assert_eq!(nnes.get_stack_pointer(), 0);
+        assert_eq!(nnes.get_stack_pointer(), 0xfd);
     }
 
     // Test TAX: Transfer Accumulator to XIndex.
@@ -336,7 +336,7 @@ mod test {
         // Manually set XIndex, then execute TXS.
         nnes.set_register(Register::XIndex, 0x8F);
         nnes.play_test(vec![0x9a, 0x00]); // TXS, BRK
-        assert_eq!(nnes.get_stack_pointer(), 0x8F);
+        assert_eq!(nnes.get_stack_pointer(), 0x8c);
     }
 
     // Test TAY: Transfer Accumulator to YIndex.
@@ -1034,4 +1034,65 @@ mod test {
         nnes.play_test(vec![0xA0, 0x30, 0xCC, 0x34, 0x12, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
+
+    // Test JMP Absolute: Jump to a target where an LDA immediate loads a value.
+    #[test]
+    fn test_jmp_absolute() {
+        let mut nnes = NNES::new();
+        // Program: JMP absolute (0x4c) to 0x8003, then LDA #0x55, BRK.
+        // Vector: [JMP, low-target, high-target, LDA, operand, BRK]
+        nnes.play_test(vec![
+            0x4c, 0x03, 0x80, // JMP 0x8005
+            0xa9, 0x55,       // LDA #0x55
+            0x00              // BRK
+        ]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0x55);
+    }
+
+    // Test JMP Indirect (normal): The pointer is not at page boundary.
+    #[test]
+    fn test_jmp_indirect_normal() {
+        let mut nnes = NNES::new();
+        // Program:
+        // Byte0: JMP indirect opcode (0x6c)
+        // Bytes1-2: Pointer = 0x8003 (little-endian: 0x03, 0x80)
+        // Bytes3-4: At address 0x8003: low=0x07, high=0x80 (target = 0x8007)
+        // Byte5: LDA #0xAA, Byte6: operand, Byte7: BRK.
+        nnes.play_test(vec![
+            0x6c, 0x03, 0x80, // JMP (indirect pointer 0x8003)
+            0x05, 0x80,       // These two bytes (at 0x8003) form the pointer: target 0x8007
+            0xa9, 0xaa,       // LDA #0xAA at target address 0x8007
+            0x00              // BRK
+        ]);
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xaa);
+    }
+
+    // Test JMP Indirect edge case:
+    // Simulate the 6502 bug when the pointer falls on a page boundary (xxFF).
+    #[test]
+    fn test_jmp_indirect_edge() {
+        let mut nnes = NNES::new();
+        // Program vector loaded at 0x8000:
+        // Byte0: JMP indirect opcode (0x6c)
+        // Bytes1-2: Pointer = 0x81FF (little-endian: 0xff, 0x81)
+        // Bytes3-5: Filler (NOPs)
+        // Bytes6-8: LDA #0xCC, BRK (target instructions at 0x8006)
+        let program = vec![
+            0x6c, 0xff, 0x81, // JMP indirect with pointer 0x81ff
+            0xea, 0xea, 0xea, // filler bytes (NOP)
+            0xa9, 0xcc,      // LDA #0xcc
+            0x00             // BRK
+        ];
+        nnes.load(program);
+        nnes.reset_state();
+        // Override memory to simulate the bug:
+        // When pointer = 0x81FF, the 6502 bug causes the upper byte to be read from address 0x8100.
+        // Set memory[0x81ff] (low byte) = 0x06 and memory[0x8100] (high byte) = 0x80,
+        // so jump target becomes 0x8006 (where LDA #0xcc resides).
+        nnes.memory_write_u8(0x81ff, 0x06);
+        nnes.memory_write_u8(0x8100, 0x80);
+        nnes.run();
+        assert_eq!(nnes.get_register(Register::Accumulator), 0xcc);
+    }
 }
+
