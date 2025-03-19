@@ -30,7 +30,7 @@ pub struct NNES {
     reg_xindex: u8,
     reg_yindex: u8,
     flags: u8,
-    memory: [u8; 0xffff],
+    memory: [u8; 0x10000],
 }
 
 impl NNES {
@@ -42,7 +42,7 @@ impl NNES {
             reg_xindex: 0,
             reg_yindex: 0,
             flags: 0b00100000,
-            memory: [0; 0xffff],
+            memory: [0; 0x10000],
         }
     }
 
@@ -63,7 +63,8 @@ impl NNES {
     }
 
     pub fn run(&mut self) {
-        while !self.get_flag(Flag::Break) {
+        let mut exit: bool = false;
+        while !exit {
             let pc: u16 = self.get_program_counter();
             let code: u8 = self.memory_read_u8(pc);
             self.set_program_counter(pc + 1);
@@ -106,12 +107,13 @@ impl NNES {
                 0xc6 | 0xd6 | 0xce | 0xde => self.handle_dec(mode),
                 0xca => self.handle_dex(),
                 0x88 => self.handle_dey(),
-                0x00 => self.handle_brk(),
+                0x00 => self.handle_brk(&mut exit),
                 0xea => self.handle_nop(),
                 0xc9 | 0xc5 | 0xd5 | 0xcd | 0xdd | 0xd9 | 0xc1 | 0xd1 => self.handle_cmp(mode),
                 0xe0 | 0xe4 | 0xec => self.handle_cmx(mode),
                 0xc0 | 0xc4 | 0xcc => self.handle_cmy(mode),
-                _ => return,
+                0x4c | 0x6c => self.handle_jmp(mode),
+                _ => todo!("Opcode {code} not yet implemented!"),
             }
         }
     }

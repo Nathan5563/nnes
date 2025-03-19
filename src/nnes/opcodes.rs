@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::nnes::{types::*, AddressingMode, Flag, Register, NNES};
+use crate::nnes::{types::*, AddressingMode, Flag, Register, NNES, BF};
 
 pub struct OpCode {
     code: u8,
@@ -327,20 +327,21 @@ impl NNES {
     }
 
     pub fn handle_pha(&mut self) {
-        self.stack_push(self.get_register(Register::Accumulator));
+        self.stack_push_u8(self.get_register(Register::Accumulator));
     }
 
     pub fn handle_php(&mut self) {
-        self.stack_push(self.get_flags());
+        self.set_flags(self.get_flags() | BF);
+        self.stack_push_u8(self.get_flags());
     }
 
     pub fn handle_pla(&mut self) {
-        let data: u8 = self.stack_pop();
+        let data: u8 = self.stack_pop_u8();
         self.set_register_with_flags(Register::Accumulator, data);
     }
 
     pub fn handle_plp(&mut self) {
-        let data: u8 = self.stack_pop();
+        let data: u8 = self.stack_pop_u8();
         self.set_flags(data);
     }
 
@@ -532,13 +533,15 @@ impl NNES {
         self.set_register_with_flags(Register::YIndex, reg_y);
     }
 
-    pub fn handle_brk(&mut self) {
-        self.set_flag(Flag::Break, true);
+    pub fn handle_brk(&mut self, exit: &mut bool) {
+        self.stack_push_u16(self.get_program_counter());
+        self.handle_php();
+        let irq = self.memory_read_u16(0xfffe);
+        self.set_program_counter(irq);
+        *exit = true;
     }
 
-    pub fn handle_nop(&mut self) {
-        return;
-    }
+    pub fn handle_nop(&mut self) {}
 
     pub fn handle_cmp(&mut self, mode: AddressingMode) {
         let reg_acc: u8 = self.get_register(Register::Accumulator);
@@ -573,6 +576,29 @@ impl NNES {
             self.set_flag(Flag::Carry, true);
         } else {
             self.set_flag(Flag::Carry, false);
+        }
+    }
+
+    pub fn handle_jmp(&mut self, mode: AddressingMode) {
+        let op: u16;
+        if mode == AddressingMode::Absolute {
+            op = self.get_operand(mode);
+            self.set_program_counter(op);
+        }
+        else {
+            let pc: u16 = self.get_program_counter();
+            let indirect: u16 = self.memory_read_u16(pc);
+            self.set_program_counter(pc + 2);
+            if indirect & LOWER_BYTE == LOWER_BYTE {
+                let lower_byte: u8 = self.memory_read_u8(indirect);
+                let upper_byte: u8 = self.memory_read_u8(indirect & UPPER_BYTE);
+                op = ((upper_byte as u16) << 8) | (lower_byte as u16);
+                self.set_program_counter(op);
+            }
+            else {
+                op = self.memory_read_u16(indirect);
+                self.set_program_counter(op);
+            }
         }
     }
 }
