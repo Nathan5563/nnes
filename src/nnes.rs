@@ -113,6 +113,18 @@ impl NNES {
                 0xe0 | 0xe4 | 0xec => self.handle_cmx(mode),
                 0xc0 | 0xc4 | 0xcc => self.handle_cmy(mode),
                 0x4c | 0x6c => self.handle_jmp(mode),
+                0x20 => self.handle_jsr(),
+                0x40 => self.handle_rti(),
+                0x60 => self.handle_rts(),
+                0x90 => self.handle_bcc(),
+                0xb0 => self.handle_bcs(),
+                0xf0 => self.handle_beq(),
+                0x24 | 0x2c => self.handle_bit(mode),
+                0x30 => self.handle_bmi(),
+                0xd0 => self.handle_bne(),
+                0x10 => self.handle_bpl(),
+                0x50 => self.handle_bvc(),
+                0x70 => self.handle_bvs(),
                 _ => todo!("Opcode {code} not yet implemented!"),
             }
         }

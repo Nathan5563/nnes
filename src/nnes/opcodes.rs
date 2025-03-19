@@ -193,10 +193,7 @@ lazy_static! {
         OpCode::new(0xcc, "CPY".to_string(), 3, 4, AddressingMode::Absolute),
         // Jump
         OpCode::new(0x4c, "JMP".to_string(), 3, 3, AddressingMode::Absolute),
-
-        // [6502] BUG: Addresses at page boundary (e.g., $21FF)
-        OpCode::new(0x6c, "JMP".to_string(), 3, 5, AddressingMode::Indirect),
-
+        OpCode::new(0x6c, "JMP".to_string(), 3, 5, AddressingMode::Indirect), // 6502 bug with 0xXXFF
         OpCode::new(0x20, "JSR".to_string(), 3, 6, AddressingMode::Absolute),
         OpCode::new(0x40, "RTI".to_string(), 1, 6, AddressingMode::Implied),
         OpCode::new(0x60, "RTS".to_string(), 1, 6, AddressingMode::Implied),
@@ -599,6 +596,96 @@ impl NNES {
                 op = self.memory_read_u16(indirect);
                 self.set_program_counter(op);
             }
+        }
+    }
+
+    pub fn handle_jsr(&mut self) {
+        let op: u16 = self.get_operand(AddressingMode::Absolute);
+        self.stack_push_u16(self.get_program_counter() - 1);
+        self.set_program_counter(op);
+    }
+
+    pub fn handle_rti(&mut self) {
+        let flags: u8 = self.stack_pop_u8();
+        let pc: u16 = self.stack_pop_u16();
+        self.set_flags(flags);
+        self.set_program_counter(pc);
+    }
+
+    pub fn handle_rts(&mut self) {
+        let pc: u16 = self.stack_pop_u16();
+        self.set_program_counter(pc + 1);
+    }
+
+    pub fn handle_bcc(&mut self) {
+        let op: i8 = self.get_operand(AddressingMode::Relative) as i8;
+        if !self.get_flag(Flag::Carry) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
+        }
+    }
+
+    pub fn handle_bcs(&mut self) {
+        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
+        if self.get_flag(Flag::Carry) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
+        }
+    }
+
+    pub fn handle_beq(&mut self) {
+        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
+        if self.get_flag(Flag::Zero) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
+        }
+    }
+
+    pub fn handle_bit(&mut self, mode: AddressingMode) {
+        let reg_acc: u8 = self.get_register(Register::Accumulator);
+        let data: u8 = self.get_data(mode);
+        self.set_flag(Flag::Overflow, data & BIT_6 != 0);
+        self.set_flag(Flag::Negative, data & BIT_7 != 0);
+        self.set_flag(Flag::Zero, data & reg_acc == 0);
+    }
+
+    pub fn handle_bmi(&mut self) {
+        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
+        if self.get_flag(Flag::Negative) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
+        }
+    }
+
+    pub fn handle_bne(&mut self) {
+        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
+        if !self.get_flag(Flag::Zero) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
+        }
+    }
+
+    pub fn handle_bpl(&mut self) {
+        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
+        if !self.get_flag(Flag::Negative) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
+        }
+    }
+
+    pub fn handle_bvc(&mut self) {
+        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
+        if !self.get_flag(Flag::Overflow) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
+        }
+    }
+
+    pub fn handle_bvs(&mut self) {
+        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
+        if self.get_flag(Flag::Overflow) {
+            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
+            self.set_program_counter(res as u16);
         }
     }
 }
