@@ -1,4 +1,6 @@
-use crate::nnes::{Register, NNES, LOWER_BYTE, UPPER_BYTE};
+use crate::types::{LOWER_BYTE, UPPER_BYTE};
+use crate::nnes::NNES;
+use crate::nnes::cpu::registers::Register;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressingMode {
@@ -31,9 +33,6 @@ impl NNES {
     }
 
     pub fn memory_write_u8(&mut self, addr: u16, data: u8) {
-        if (0x0200..=0x05FF).contains(&addr) {
-            println!("VRAM WRITE {:04X} = {:02X}", addr, data);
-        }
         self.memory[addr as usize] = data;
     }
 

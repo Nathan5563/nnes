@@ -1,22 +1,21 @@
-#![allow(unused_variables)]
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
 #[macro_use]
 extern crate lazy_static;
 
-use std::time::{Instant, Duration};
-use rand::Rng;
-use sdl2::event::Event;
-use sdl2::EventPump;
-use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use sdl2::pixels::PixelFormatEnum;
-use sdl2::render::TextureAccess;
-use sdl2::rect::Rect;
-
 mod nnes;
+mod types;
+
 use nnes::NNES;
+
+use rand::Rng;
+use sdl2::EventPump;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::rect::Rect;
+use sdl2::render::TextureAccess;
+use std::time::{Duration, Instant};
 
 static KEY_W: u8 = 0x77;
 static KEY_A: u8 = 0x61;
@@ -27,20 +26,20 @@ fn color(byte: u8) -> Color {
     match byte {
         0 => Color::BLACK,
         1 => Color::WHITE,
-        2 => Color::RGB(255, 0, 0),         // Red
-        3 => Color::RGB(0, 255, 255),       // Cyan
-        4 => Color::RGB(128, 0, 128),       // Purple
-        5 => Color::RGB(0, 128, 0),         // Green
-        6 => Color::RGB(0, 0, 255),         // Blue
-        7 => Color::RGB(255, 255, 0),       // Yellow
-        8 => Color::RGB(255, 165, 0),       // Orange
-        9 => Color::RGB(165, 42, 42),       // Brown
-        0xA => Color::RGB(255, 192, 203),   // Light Red
-        0xB => Color::RGB(64, 64, 64),      // Dark Grey
-        0xC => Color::RGB(128, 128, 128),   // Grey
-        0xD => Color::RGB(144, 238, 144),   // Light Green
-        0xE => Color::RGB(173, 216, 230),   // Light Blue
-        0xF => Color::RGB(211, 211, 211),   // Light Grey
+        2 => Color::RGB(255, 0, 0),       // Red
+        3 => Color::RGB(0, 255, 255),     // Cyan
+        4 => Color::RGB(128, 0, 128),     // Purple
+        5 => Color::RGB(0, 128, 0),       // Green
+        6 => Color::RGB(0, 0, 255),       // Blue
+        7 => Color::RGB(255, 255, 0),     // Yellow
+        8 => Color::RGB(255, 165, 0),     // Orange
+        9 => Color::RGB(165, 42, 42),     // Brown
+        0xA => Color::RGB(255, 192, 203), // Light Red
+        0xB => Color::RGB(64, 64, 64),    // Dark Grey
+        0xC => Color::RGB(128, 128, 128), // Grey
+        0xD => Color::RGB(144, 238, 144), // Light Green
+        0xE => Color::RGB(173, 216, 230), // Light Blue
+        0xF => Color::RGB(211, 211, 211), // Light Grey
         _ => Color::BLACK,
     }
 }
@@ -51,9 +50,10 @@ fn read_screen_state(nnes: &NNES, frame: &mut [u8; 32 * 32 * 3]) -> bool {
         let color_byte: u8 = nnes.memory_read_u8(addr);
         let pixel_color: Color = color(color_byte);
         let idx: usize = i * 3;
-        if frame[idx] != pixel_color.r ||
-           frame[idx + 1] != pixel_color.g ||
-           frame[idx + 2] != pixel_color.b {
+        if frame[idx] != pixel_color.r
+            || frame[idx + 1] != pixel_color.g
+            || frame[idx + 2] != pixel_color.b
+        {
             frame[idx] = pixel_color.r;
             frame[idx + 1] = pixel_color.g;
             frame[idx + 2] = pixel_color.b;
@@ -66,19 +66,33 @@ fn read_screen_state(nnes: &NNES, frame: &mut [u8; 32 * 32 * 3]) -> bool {
 fn handle_user_input(nnes: &mut NNES, event_pump: &mut EventPump) {
     for event in event_pump.poll_iter() {
         match event {
-            Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                std::process::exit(0)
-            },
-            Event::KeyDown { keycode: Some(Keycode::W), .. } => {
+            Event::Quit { .. }
+            | Event::KeyDown {
+                keycode: Some(Keycode::Escape),
+                ..
+            } => std::process::exit(0),
+            Event::KeyDown {
+                keycode: Some(Keycode::W),
+                ..
+            } => {
                 nnes.memory_write_u8(0xff, KEY_W);
-            },
-            Event::KeyDown { keycode: Some(Keycode::A), .. } => {
+            }
+            Event::KeyDown {
+                keycode: Some(Keycode::A),
+                ..
+            } => {
                 nnes.memory_write_u8(0xff, KEY_A);
-            },
-            Event::KeyDown { keycode: Some(Keycode::S), .. } => {
+            }
+            Event::KeyDown {
+                keycode: Some(Keycode::S),
+                ..
+            } => {
                 nnes.memory_write_u8(0xff, KEY_S);
-            },
-            Event::KeyDown { keycode: Some(Keycode::D), .. } => {
+            }
+            Event::KeyDown {
+                keycode: Some(Keycode::D),
+                ..
+            } => {
                 nnes.memory_write_u8(0xff, KEY_D);
             }
             _ => {}
@@ -89,32 +103,28 @@ fn handle_user_input(nnes: &mut NNES, event_pump: &mut EventPump) {
 fn main() {
     let sdl_context: sdl2::Sdl = sdl2::init().unwrap();
 
-    let video_subsystem: sdl2::VideoSubsystem = sdl_context
-        .video().unwrap();
-    let mut event_pump: EventPump = sdl_context
-        .event_pump().unwrap();
-    
+    let video_subsystem: sdl2::VideoSubsystem = sdl_context.video().unwrap();
+    let mut event_pump: EventPump = sdl_context.event_pump().unwrap();
+
     let window: sdl2::video::Window = video_subsystem
         .window("Snake Game", 320, 320)
         .position_centered()
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     let mut canvas: sdl2::render::Canvas<sdl2::video::Window> = window
         .into_canvas()
         .software() /* Wow that took a while to debug */
         .present_vsync()
-        .build().unwrap();
+        .build()
+        .unwrap();
 
-    let texture_creator: sdl2::render::TextureCreator<sdl2::video::WindowContext> = canvas
-        .texture_creator();
-    
+    let texture_creator: sdl2::render::TextureCreator<sdl2::video::WindowContext> =
+        canvas.texture_creator();
+
     let mut texture: sdl2::render::Texture<'_> = texture_creator
-        .create_texture(
-            PixelFormatEnum::RGB24,
-            TextureAccess::Streaming,
-            32,
-            32
-        ).unwrap();
+        .create_texture(PixelFormatEnum::RGB24, TextureAccess::Streaming, 32, 32)
+        .unwrap();
 
     let game_code: Vec<u8> = vec![
         0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0x20, 0x2a, 0x06, 0x60, 0xa9, 0x02,
@@ -145,24 +155,22 @@ fn main() {
     emu.reset_state();
 
     let mut screen_state: [u8; 3072] = [0 as u8; 32 * 3 * 32];
-    let mut rng: rand::prelude::ThreadRng = rand::thread_rng();
+    let mut rng: rand::prelude::ThreadRng = rand::rng();
     let mut last_frame: Instant = Instant::now();
 
     emu.run_callback(move |emu: &mut NNES| {
         handle_user_input(emu, &mut event_pump);
-        emu.memory_write_u8(0xfe, rng.gen_range(1, 16));
+        emu.memory_write_u8(0xfe, rng.random_range(1..16));
         if read_screen_state(&emu, &mut screen_state) {
             let pitch: usize = 32 * 3;
             texture.update(None, &screen_state, pitch).unwrap();
             canvas.clear();
-            canvas.copy(
-                &texture,
-                None,
-                Some(Rect::new(0, 0, 32 * 10, 32 * 10))
-            ).unwrap();
+            canvas
+                .copy(&texture, None, Some(Rect::new(0, 0, 32 * 10, 32 * 10)))
+                .unwrap();
             canvas.present();
         }
-        let frame_time = Duration::from_micros(300);
+        let frame_time = Duration::from_micros(166);
         while last_frame.elapsed() < frame_time {
             std::thread::yield_now();
         }
@@ -174,7 +182,9 @@ fn main() {
 #[cfg(test)]
 mod test {
     use super::*;
-    use nnes::*;
+    use nnes::cpu::flags::*;
+    use nnes::cpu::memory::*;
+    use nnes::cpu::registers::*;
 
     #[test]
     fn test_lda_immediate() {
@@ -351,8 +361,8 @@ mod test {
         // Let effective address be 0x7000 (low=0x00, high=0x70)
         nnes.memory_write_u8(0x60 + 0x03, 0x00); // low byte of effective address
         nnes.memory_write_u8(0x60 + 0x03 + 1, 0x70); // high byte
-        // STA indirect,X (0x81). Program loaded at 0x8000:
-        // [opcode, pointer_low, pointer_high, BRK] where pointer becomes 0x0060.
+                                                     // STA indirect,X (0x81). Program loaded at 0x8000:
+                                                     // [opcode, pointer_low, pointer_high, BRK] where pointer becomes 0x0060.
         nnes.play_test(vec![0x81, 0x60, 0x00, 0x00]);
         assert_eq!(nnes.memory_read_u8(0x7000), 0x56);
     }
@@ -366,8 +376,8 @@ mod test {
         // Set pointer table at address 0x0080 to base 0x2020 (0x20, 0x20), so effective = 0x2020 + 0x02 = 0x2022.
         nnes.memory_write_u8(0x0080, 0x20); // low
         nnes.memory_write_u8(0x0080 + 1, 0x20); // high
-        // STA indirect,Y (0x91). Program loaded at 0x8000:
-        // [opcode, pointer, BRK] where pointer becomes 0x0080.
+                                                // STA indirect,Y (0x91). Program loaded at 0x8000:
+                                                // [opcode, pointer, BRK] where pointer becomes 0x0080.
         nnes.play_test(vec![0x91, 0x80, 0x00, 0x00]);
         assert_eq!(nnes.memory_read_u8(0x2020 + 0x02), 0x78);
     }
@@ -1011,7 +1021,7 @@ mod test {
         nnes.play_test(vec![0xe6, 0x40, 0x00]); // INC zero page, BRK
         assert_eq!(nnes.memory_read_u8(0x40), 0x11);
     }
-    
+
     #[test]
     fn test_inc_overflow() {
         let mut nnes = NNES::new();
@@ -1020,7 +1030,7 @@ mod test {
         nnes.play_test(vec![0xe6, 0x50, 0x00]); // INC zero page, BRK
         assert_eq!(nnes.memory_read_u8(0x50), 0x00);
     }
-    
+
     #[test]
     fn test_iny_no_overflow() {
         let mut nnes = NNES::new();
@@ -1028,7 +1038,7 @@ mod test {
         nnes.play_test(vec![0xc8, 0x00]); // INY, BRK; 0x10 -> 0x11
         assert_eq!(nnes.get_register(Register::YIndex), 0x11);
     }
-    
+
     #[test]
     fn test_iny_overflow() {
         let mut nnes = NNES::new();
@@ -1036,7 +1046,7 @@ mod test {
         nnes.play_test(vec![0xc8, 0x00]); // INY, BRK; 0xff -> 0x00
         assert_eq!(nnes.get_register(Register::YIndex), 0x00);
     }
-    
+
     #[test]
     fn test_dex_no_overflow() {
         let mut nnes = NNES::new();
@@ -1044,7 +1054,7 @@ mod test {
         nnes.play_test(vec![0xca, 0x00]); // DEX, BRK; 0x20 -> 0x1F
         assert_eq!(nnes.get_register(Register::XIndex), 0x1F);
     }
-    
+
     #[test]
     fn test_dex_overflow() {
         let mut nnes = NNES::new();
@@ -1052,7 +1062,7 @@ mod test {
         nnes.play_test(vec![0xca, 0x00]); // DEX, BRK; 0x00 -> 0xff
         assert_eq!(nnes.get_register(Register::XIndex), 0xff);
     }
-    
+
     #[test]
     fn test_dey_no_overflow() {
         let mut nnes = NNES::new();
@@ -1060,7 +1070,7 @@ mod test {
         nnes.play_test(vec![0x88, 0x00]); // DEY, BRK; 0x20 -> 0x1F
         assert_eq!(nnes.get_register(Register::YIndex), 0x1F);
     }
-    
+
     #[test]
     fn test_dey_overflow() {
         let mut nnes = NNES::new();
@@ -1068,7 +1078,7 @@ mod test {
         nnes.play_test(vec![0x88, 0x00]); // DEY, BRK; 0x00 -> 0xff
         assert_eq!(nnes.get_register(Register::YIndex), 0xff);
     }
-    
+
     #[test]
     fn test_dec_no_underflow() {
         let mut nnes = NNES::new();
@@ -1077,7 +1087,7 @@ mod test {
         nnes.play_test(vec![0xc6, 0x60, 0x00]); // DEC zero page, BRK
         assert_eq!(nnes.memory_read_u8(0x60), 0x10);
     }
-    
+
     #[test]
     fn test_dec_underflow() {
         let mut nnes = NNES::new();
@@ -1097,7 +1107,7 @@ mod test {
         assert_eq!(nnes.get_flag(Flag::Zero), true);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     #[test]
     fn test_cmp_immediate_less() {
         let mut nnes = NNES::new();
@@ -1105,7 +1115,7 @@ mod test {
         nnes.play_test(vec![0xA9, 0x40, 0xC9, 0x50, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), false);
     }
-    
+
     #[test]
     fn test_cmp_immediate_greater() {
         let mut nnes = NNES::new();
@@ -1113,7 +1123,7 @@ mod test {
         nnes.play_test(vec![0xA9, 0x60, 0xC9, 0x50, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     #[test]
     fn test_cmp_zero_page() {
         let mut nnes = NNES::new();
@@ -1122,7 +1132,7 @@ mod test {
         nnes.play_test(vec![0xA9, 0x55, 0xC5, 0x10, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     // New tests for CPX (cmx) instruction
     #[test]
     fn test_cpx_immediate_equal() {
@@ -1132,7 +1142,7 @@ mod test {
         assert_eq!(nnes.get_register(Register::XIndex), 0x30);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     #[test]
     fn test_cpx_immediate_less() {
         let mut nnes = NNES::new();
@@ -1140,7 +1150,7 @@ mod test {
         nnes.play_test(vec![0xA2, 0x20, 0xE0, 0x30, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), false);
     }
-    
+
     #[test]
     fn test_cpx_zero_page() {
         let mut nnes = NNES::new();
@@ -1149,7 +1159,7 @@ mod test {
         nnes.play_test(vec![0xA2, 0x40, 0xE4, 0x10, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     #[test]
     fn test_cpx_absolute() {
         let mut nnes = NNES::new();
@@ -1158,7 +1168,7 @@ mod test {
         nnes.play_test(vec![0xA2, 0x30, 0xEC, 0x34, 0x12, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     // New tests for CPY (cmy) instruction
     #[test]
     fn test_cpy_immediate_equal() {
@@ -1168,7 +1178,7 @@ mod test {
         assert_eq!(nnes.get_register(Register::YIndex), 0x30);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     #[test]
     fn test_cpy_immediate_less() {
         let mut nnes = NNES::new();
@@ -1176,7 +1186,7 @@ mod test {
         nnes.play_test(vec![0xA0, 0x20, 0xC0, 0x30, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), false);
     }
-    
+
     #[test]
     fn test_cpy_zero_page() {
         let mut nnes = NNES::new();
@@ -1185,7 +1195,7 @@ mod test {
         nnes.play_test(vec![0xA0, 0x50, 0xC4, 0x10, 0x00]);
         assert_eq!(nnes.get_flag(Flag::Carry), true);
     }
-    
+
     #[test]
     fn test_cpy_absolute() {
         let mut nnes = NNES::new();
@@ -1203,8 +1213,8 @@ mod test {
         // Vector: [JMP, low-target, high-target, LDA, operand, BRK]
         nnes.play_test(vec![
             0x4c, 0x03, 0x80, // JMP 0x8005
-            0xa9, 0x55,       // LDA #0x55
-            0x00              // BRK
+            0xa9, 0x55, // LDA #0x55
+            0x00, // BRK
         ]);
         assert_eq!(nnes.get_register(Register::Accumulator), 0x55);
     }
@@ -1220,9 +1230,9 @@ mod test {
         // Byte5: LDA #0xAA, Byte6: operand, Byte7: BRK.
         nnes.play_test(vec![
             0x6c, 0x03, 0x80, // JMP (indirect pointer 0x8003)
-            0x05, 0x80,       // These two bytes (at 0x8003) form the pointer: target 0x8007
-            0xa9, 0xaa,       // LDA #0xaa at target address 0x8007
-            0x00              // BRK
+            0x05, 0x80, // These two bytes (at 0x8003) form the pointer: target 0x8007
+            0xa9, 0xaa, // LDA #0xaa at target address 0x8007
+            0x00, // BRK
         ]);
         assert_eq!(nnes.get_register(Register::Accumulator), 0xaa);
     }
@@ -1240,8 +1250,8 @@ mod test {
         let program = vec![
             0x6c, 0xff, 0x81, // JMP indirect with pointer 0x81ff
             0xea, 0xea, 0xea, // filler bytes (NOP)
-            0xa9, 0xcc,      // LDA #0xcc
-            0x00             // BRK
+            0xa9, 0xcc, // LDA #0xcc
+            0x00, // BRK
         ];
         nnes.load(program);
         nnes.reset_state();
@@ -1268,14 +1278,18 @@ mod test {
         // Ending with BRK at $8006.
         let program = vec![
             0x20, 0x04, 0x80, // JSR $8004
-            0x00, 0xa9, 0x30,  // (dummy)
-            0x60,             // RTS (subroutine at $8005)
-            0x00,             // BRK to quit execution
+            0x00, 0xa9, 0x30, // (dummy)
+            0x60, // RTS (subroutine at $8005)
+            0x00, // BRK to quit execution
         ];
         nnes.play_test(program);
         assert_eq!(nnes.get_register(Register::Accumulator), 0x30);
         let _ = nnes.stack_pop_u8();
-        assert_eq!(nnes.stack_pop_u16(), 0x8005, "RTS did not return to the instruction following the JSR");
+        assert_eq!(
+            nnes.stack_pop_u16(),
+            0x8005,
+            "RTS did not return to the instruction following the JSR"
+        );
     }
 
     // Test for RTI: opcode 0x40.
@@ -1295,8 +1309,16 @@ mod test {
         nnes.play_test(program);
         // RTI should restore PC to $323 and the status register accordingly.
         let _ = nnes.stack_pop_u8();
-        assert_eq!(nnes.stack_pop_u16(), 0x324, "RTI did not restore the correct program counter");
-        assert_eq!(nnes.get_flags(), 0b10111010, "RTI did not restore the correct status register");
+        assert_eq!(
+            nnes.stack_pop_u16(),
+            0x324,
+            "RTI did not restore the correct program counter"
+        );
+        assert_eq!(
+            nnes.get_flags(),
+            0b10111010,
+            "RTI did not restore the correct status register"
+        );
     }
 
     // Test for BEQ (branch if equal): opcode 0xf0.
@@ -1313,7 +1335,11 @@ mod test {
         nnes.play_test(program);
         let _ = nnes.stack_pop_u8();
         assert_eq!(nnes.get_register(Register::Accumulator), 0x00, "BAAAAAA");
-        assert_eq!(nnes.stack_pop_u16(), 0x8007, "BEQ did not branch when Zero flag was set");
+        assert_eq!(
+            nnes.stack_pop_u16(),
+            0x8007,
+            "BEQ did not branch when Zero flag was set"
+        );
     }
 
     #[test]
@@ -1328,7 +1354,11 @@ mod test {
         let program = vec![0xf0, offset_byte, 0xea, 0x00];
         nnes.play_test(program);
         let _ = nnes.stack_pop_u8();
-        assert_eq!(nnes.stack_pop_u16(), 0x8005, "BEQ incorrectly branched when Zero flag was clear");
+        assert_eq!(
+            nnes.stack_pop_u16(),
+            0x8005,
+            "BEQ incorrectly branched when Zero flag was clear"
+        );
     }
 
     // Test for BIT Zero Page: opcode 0x24.
@@ -1343,9 +1373,18 @@ mod test {
         let program = vec![0x24, 0x10, 0x00];
         nnes.play_test(program);
         // BIT should set the Zero flag and also the Negative (bit 7) and Overflow (bit 6) flags.
-        assert!(nnes.get_flag(Flag::Zero), "BIT zero page did not set Zero flag when expected");
-        assert!(nnes.get_flag(Flag::Negative), "BIT zero page did not set Negative flag based on bit 7");
-        assert!(nnes.get_flag(Flag::Overflow), "BIT zero page did not set Overflow flag based on bit 6");
+        assert!(
+            nnes.get_flag(Flag::Zero),
+            "BIT zero page did not set Zero flag when expected"
+        );
+        assert!(
+            nnes.get_flag(Flag::Negative),
+            "BIT zero page did not set Negative flag based on bit 7"
+        );
+        assert!(
+            nnes.get_flag(Flag::Overflow),
+            "BIT zero page did not set Overflow flag based on bit 6"
+        );
     }
 
     // Test for BIT Absolute: opcode 0x2c.
@@ -1361,8 +1400,17 @@ mod test {
         let program = vec![0x2c, 0x00, 0x20, 0x00];
         nnes.play_test(program);
         // BIT should set the Zero flag, leave Negative clear (bit 7 is 0), and set Overflow (bit 6 is 1).
-        assert!(nnes.get_flag(Flag::Zero), "BIT absolute did not set Zero flag when expected");
-        assert!(!nnes.get_flag(Flag::Negative), "BIT absolute incorrectly set Negative flag");
-        assert!(nnes.get_flag(Flag::Overflow), "BIT absolute did not set Overflow flag as expected");
+        assert!(
+            nnes.get_flag(Flag::Zero),
+            "BIT absolute did not set Zero flag when expected"
+        );
+        assert!(
+            !nnes.get_flag(Flag::Negative),
+            "BIT absolute incorrectly set Negative flag"
+        );
+        assert!(
+            nnes.get_flag(Flag::Overflow),
+            "BIT absolute did not set Overflow flag as expected"
+        );
     }
 }

@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::nnes::{types::*, AddressingMode, Flag, Register, NNES, BF, NEG_BF};
+use crate::nnes::NNES;
+use crate::nnes::cpu::memory::AddressingMode;
+use crate::nnes::cpu::flags::Flag;
+use crate::nnes::cpu::registers::Register;
+use crate::types::{BIT_0, BIT_6, BIT_7, LOWER_BYTE, UPPER_BYTE};
 
 pub struct OpCode {
     code: u8,
@@ -328,7 +332,7 @@ impl NNES {
     }
 
     pub fn handle_php(&mut self) {
-        self.set_flags(self.get_flags() | BF);
+        self.set_flag(Flag::Break, true);
         self.stack_push_u8(self.get_flags());
     }
 
@@ -338,8 +342,9 @@ impl NNES {
     }
 
     pub fn handle_plp(&mut self) {
-        let data: u8 = self.stack_pop_u8() & NEG_BF;
+        let data: u8 = self.stack_pop_u8();
         self.set_flags(data);
+        self.set_flag(Flag::Break, false);
     }
 
     pub fn handle_and(&mut self, mode: AddressingMode) {
@@ -606,9 +611,10 @@ impl NNES {
     }
 
     pub fn handle_rti(&mut self) {
-        let flags: u8 = self.stack_pop_u8() & NEG_BF;
+        let flags: u8 = self.stack_pop_u8();
         let pc: u16 = self.stack_pop_u16();
         self.set_flags(flags);
+        self.set_flag(Flag::Break, false);
         self.set_program_counter(pc);
     }
 
