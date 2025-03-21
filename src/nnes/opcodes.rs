@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::nnes::{types::*, AddressingMode, Flag, Register, NNES, BF};
+use crate::nnes::{types::*, AddressingMode, Flag, Register, NNES, BF, NEG_BF};
 
 pub struct OpCode {
     code: u8,
@@ -338,7 +338,7 @@ impl NNES {
     }
 
     pub fn handle_plp(&mut self) {
-        let data: u8 = self.stack_pop_u8();
+        let data: u8 = self.stack_pop_u8() & NEG_BF;
         self.set_flags(data);
     }
 
@@ -530,13 +530,12 @@ impl NNES {
         self.set_register_with_flags(Register::YIndex, reg_y);
     }
 
-    pub fn handle_brk(&mut self, exit: &mut bool) {
+    pub fn handle_brk(&mut self) {
         self.set_program_counter(self.get_program_counter() + 1); // implied padding byte
         self.stack_push_u16(self.get_program_counter());
         self.handle_php();
-        let irq = self.memory_read_u16(0xfffe);
+        let irq: u16 = self.memory_read_u16(0xfffe);
         self.set_program_counter(irq);
-        *exit = true;
     }
 
     pub fn handle_nop(&mut self) {}
@@ -607,7 +606,7 @@ impl NNES {
     }
 
     pub fn handle_rti(&mut self) {
-        let flags: u8 = self.stack_pop_u8();
+        let flags: u8 = self.stack_pop_u8() & NEG_BF;
         let pc: u16 = self.stack_pop_u16();
         self.set_flags(flags);
         self.set_program_counter(pc);
@@ -618,28 +617,24 @@ impl NNES {
         self.set_program_counter(pc + 1);
     }
 
-    pub fn handle_bcc(&mut self) {
+    fn branch(&mut self, jmp: bool) {
         let op: i8 = self.get_operand(AddressingMode::Relative) as i8;
-        if !self.get_flag(Flag::Carry) {
+        if jmp {
             let res: i64 = (self.get_program_counter() as i64) + (op as i64);
             self.set_program_counter(res as u16);
         }
+    }
+
+    pub fn handle_bcc(&mut self) {
+        self.branch(!self.get_flag(Flag::Carry));
     }
 
     pub fn handle_bcs(&mut self) {
-        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
-        if self.get_flag(Flag::Carry) {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
-        }
+        self.branch(self.get_flag(Flag::Carry));
     }
 
     pub fn handle_beq(&mut self) {
-        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
-        if self.get_flag(Flag::Zero) {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
-        }
+        self.branch(self.get_flag(Flag::Zero));
     }
 
     pub fn handle_bit(&mut self, mode: AddressingMode) {
@@ -651,42 +646,22 @@ impl NNES {
     }
 
     pub fn handle_bmi(&mut self) {
-        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
-        if self.get_flag(Flag::Negative) {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
-        }
+        self.branch(self.get_flag(Flag::Negative));
     }
 
     pub fn handle_bne(&mut self) {
-        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
-        if !self.get_flag(Flag::Zero) {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
-        }
+        self.branch(!self.get_flag(Flag::Zero));
     }
 
     pub fn handle_bpl(&mut self) {
-        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
-        if !self.get_flag(Flag::Negative) {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
-        }
+        self.branch(!self.get_flag(Flag::Negative));
     }
 
     pub fn handle_bvc(&mut self) {
-        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
-        if !self.get_flag(Flag::Overflow) {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
-        }
+        self.branch(!self.get_flag(Flag::Overflow));
     }
 
     pub fn handle_bvs(&mut self) {
-        let op: i8 = (self.get_operand(AddressingMode::Relative) as u8) as i8;
-        if self.get_flag(Flag::Overflow) {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
-        }
+        self.branch(self.get_flag(Flag::Overflow));
     }
 }
