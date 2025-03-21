@@ -21,7 +21,9 @@ use memory::*;
 use opcodes::*;
 use registers::*;
 
-pub static PROGRAM_START_POINT: u16 = 0x8000;
+pub static PROGRAM_START_ADDR: u16 = 0xfffc;
+pub static PROGRAM_START_PC: u16 = 0x8000;
+pub static GAME_PROGRAM_START_PC: u16 = 0x0600; // new for game code
 
 pub struct NNES {
     program_counter: u16,
@@ -41,30 +43,47 @@ impl NNES {
             reg_accumulator: 0,
             reg_xindex: 0,
             reg_yindex: 0,
-            flags: 0b00100000,
+            flags: 0b00100100,
             memory: [0; 0x10000],
         }
     }
 
+    // Existing load method for tests
     pub fn load(&mut self, program: Vec<u8>) {
         let mut idx = 0;
         for data in program {
-            self.memory_write_u8(PROGRAM_START_POINT + idx, data);
+            self.memory_write_u8(PROGRAM_START_PC + idx, data);
             idx += 1;
         }
-        self.memory_write_u16(0xfffc, PROGRAM_START_POINT);
+        self.memory_write_u16(PROGRAM_START_ADDR, PROGRAM_START_PC);
+    }
+
+    // New method for game code expecting start at 0x0600
+    pub fn load_game(&mut self, program: Vec<u8>) {
+        let mut idx = 0;
+        for data in program {
+            self.memory_write_u8(GAME_PROGRAM_START_PC + idx, data);
+            idx += 1;
+        }
+        self.memory_write_u16(PROGRAM_START_ADDR, GAME_PROGRAM_START_PC);
     }
 
     pub fn reset_state(&mut self) {
         self.reset_registers();
         self.reset_flags();
-        self.set_program_counter(self.memory_read_u16(0xfffc));
+        self.set_program_counter(self.memory_read_u16(PROGRAM_START_ADDR));
         self.set_stack_pointer(0xff);
     }
 
     pub fn run(&mut self) {
-        let mut exit: bool = false;
-        while !exit {
+        self.run_callback(|_| {});
+    }
+
+    pub fn run_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut NNES),
+    {
+        loop {
             let pc: u16 = self.get_program_counter();
             let code: u8 = self.memory_read_u8(pc);
             self.set_program_counter(pc + 1);
@@ -107,8 +126,8 @@ impl NNES {
                 0xc6 | 0xd6 | 0xce | 0xde => self.handle_dec(mode),
                 0xca => self.handle_dex(),
                 0x88 => self.handle_dey(),
-                0x00 => self.handle_brk(&mut exit),
-                0xea => self.handle_nop(),
+                0x00 => return,
+                0xea => {},
                 0xc9 | 0xc5 | 0xd5 | 0xcd | 0xdd | 0xd9 | 0xc1 | 0xd1 => self.handle_cmp(mode),
                 0xe0 | 0xe4 | 0xec => self.handle_cmx(mode),
                 0xc0 | 0xc4 | 0xcc => self.handle_cmy(mode),
@@ -125,8 +144,9 @@ impl NNES {
                 0x10 => self.handle_bpl(),
                 0x50 => self.handle_bvc(),
                 0x70 => self.handle_bvs(),
-                _ => todo!("Opcode {code} not yet implemented!"),
+                _ => todo!("Opcode {code} not implemented!"),
             }
+            callback(self);
         }
     }
 
@@ -138,7 +158,7 @@ impl NNES {
 
     pub fn play_test(&mut self, program: Vec<u8>) {
         self.load(program);
-        self.set_program_counter(self.memory_read_u16(0xfffc));
+        self.set_program_counter(self.memory_read_u16(PROGRAM_START_ADDR));
         self.run();
     }
 }
