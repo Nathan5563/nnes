@@ -48,7 +48,7 @@ impl NNES {
     pub fn reset_state_snake(&mut self) {
         self.reset_registers();
         self.reset_flags();
-        self.set_program_counter(PROGRAM_START_PC + SNAKE_6502_PC); /*self.memory_read_u16(RESET_VECTOR)*/
+        self.set_program_counter(PROGRAM_START_PC + SNAKE_6502_PC);
         self.set_stack_pointer(0xfd);
     }
 
@@ -69,8 +69,8 @@ impl NNES {
     {
         let mut exit: bool = false;
         while !exit {
-            self.step(&mut exit);
             callback(self);
+            self.step(&mut exit);
         }
     }
 
