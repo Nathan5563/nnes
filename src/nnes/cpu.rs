@@ -1,11 +1,10 @@
 pub mod flags;
 pub mod interrupts;
-pub mod memory;
 pub mod opcodes;
 pub mod registers;
 
 use crate::nnes::NNES;
-use crate::nnes::cpu::memory::AddressingMode;
+use crate::nnes::memory::{AddressingMode, Mem};
 use crate::nnes::cpu::opcodes::opcodes_map;
 
 impl NNES {

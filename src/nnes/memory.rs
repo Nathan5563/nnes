@@ -27,34 +27,48 @@ enum RegisterOffset {
     YIndex,
 }
 
-impl NNES {
-    pub fn memory_read_u8(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-    }
-
-    pub fn memory_write_u8(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
-    }
-
-    pub fn memory_read_u16(&self, addr: u16) -> u16 {
+pub trait Mem {
+    fn memory_read_u8(&self, addr: u16) -> u8;
+    fn memory_write_u8(&mut self, addr: u16, data: u8);
+    fn memory_read_u16(&self, addr: u16) -> u16 {
         if addr == 0xffff {
-            panic!("Can not read two bytes at one byte location (end of memory reached)");
+            panic!("Can not read two bytes at one byte location (end of ram reached)");
         }
-        let low: u8 = self.memory[addr as usize];
-        let high: u8 = self.memory[addr as usize + 1];
+        let low: u8 = self.memory_read_u8(addr);
+        let high: u8 = self.memory_read_u8(addr + 1);
         ((high as u16) << 8) | (low as u16)
     }
 
-    pub fn memory_write_u16(&mut self, addr: u16, data: u16) {
+    fn memory_write_u16(&mut self, addr: u16, data: u16) {
         if addr == 0xffff {
-            panic!("Can not write two bytes at one byte location (end of memory reached)");
+            panic!("Can not write two bytes at one byte location (end of ram reached)");
         }
         let low: u16 = data & LOWER_BYTE;
         let high: u16 = (data & UPPER_BYTE) >> 8;
-        self.memory[addr as usize] = low as u8;
-        self.memory[addr as usize + 1] = high as u8;
+        self.memory_write_u8(addr, low as u8);
+        self.memory_write_u8(addr, high as u8);
+    }
+}
+
+impl Mem for NNES {
+    fn memory_read_u8(&self, addr: u16) -> u8 {
+        self.bus.memory_read_u8(addr)
     }
 
+    fn memory_write_u8(&mut self, addr: u16, data: u8) {
+        self.bus.memory_write_u8(addr, data);
+    }
+
+    fn memory_read_u16(&self, addr: u16) -> u16 {
+        self.bus.memory_read_u16(addr)
+    }
+
+    fn memory_write_u16(&mut self, addr: u16, data: u16) {
+        self.bus.memory_write_u16(addr, data);
+    }
+}
+
+impl NNES {
     pub fn stack_push_u8(&mut self, data: u8) {
         let mut stk_ptr: u8 = self.get_stack_pointer();
         self.memory_write_u8(STACK_OFFSET + stk_ptr as u16, data);
@@ -88,10 +102,6 @@ impl NNES {
         let lower_byte: u8 = self.stack_pop_u8();
         let upper_byte: u8 = self.stack_pop_u8();
         ((upper_byte as u16) << 8) | (lower_byte as u16)
-    }
-
-    pub fn reset_memory(&mut self) {
-        self.memory = [0; 0x10000];
     }
 
     fn handle_immediate(&mut self) -> u16 {

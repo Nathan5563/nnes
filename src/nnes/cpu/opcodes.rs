@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::nnes::NNES;
-use crate::nnes::cpu::memory::AddressingMode;
+use crate::nnes::{IRQ_VECTOR, NNES};
+use crate::nnes::memory::{AddressingMode, Mem};
 use crate::nnes::cpu::flags::Flag;
 use crate::nnes::cpu::registers::Register;
 use crate::types::{BIT_0, BIT_6, BIT_7, LOWER_BYTE, UPPER_BYTE};
@@ -539,7 +539,7 @@ impl NNES {
         self.set_program_counter(self.get_program_counter() + 1); // implied padding byte
         self.stack_push_u16(self.get_program_counter());
         self.handle_php();
-        let irq: u16 = self.memory_read_u16(0xfffe);
+        let irq: u16 = self.memory_read_u16(IRQ_VECTOR);
         self.set_program_counter(irq);
     }
 

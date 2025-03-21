@@ -1,8 +1,16 @@
 pub mod cpu;
+pub mod memory;
+pub mod bus;
+pub mod rom;
 
-static PROGRAM_START_ADDR: u16 = 0xfffc;
-static PROGRAM_START_PC: u16 = 0x8000;
-static GAME_PROGRAM_START_PC: u16 = 0x0600; // new for game code
+use bus::Bus;
+use memory::Mem;
+
+pub static RESET_VECTOR: u16 = 0xfffc;
+pub static IRQ_VECTOR: u16 = 0xfffe;
+pub static PROGRAM_START_PC: u16 = 0x8000;
+pub static PROGRAM_START_STATUS: u8 = 0b00100100;
+pub static SNAKE_6502_PC: u16 = 0x0600; // new for game code
 
 pub struct NNES {
     program_counter: u16,
@@ -11,47 +19,44 @@ pub struct NNES {
     reg_xindex: u8,
     reg_yindex: u8,
     flags: u8,
-    memory: [u8; 0x10000],
+    bus: Bus,
 }
 
 impl NNES {
-    pub fn new() -> Self {
+    pub fn new(bus: Bus) -> Self {
         NNES {
-            program_counter: 0,
-            stack_pointer: 0xff,
+            program_counter: PROGRAM_START_PC,
+            stack_pointer: 0xfd,
             reg_accumulator: 0,
             reg_xindex: 0,
             reg_yindex: 0,
-            flags: 0b00100100,
-            memory: [0; 0x10000],
+            flags: PROGRAM_START_STATUS,
+            bus: bus,
         }
-    }
-
-    // Existing load method for tests
-    pub fn load(&mut self, program: Vec<u8>) {
-        let mut idx = 0;
-        for data in program {
-            self.memory_write_u8(PROGRAM_START_PC + idx, data);
-            idx += 1;
-        }
-        self.memory_write_u16(PROGRAM_START_ADDR, PROGRAM_START_PC);
     }
 
     // New method for game code expecting start at 0x0600
-    pub fn load_game(&mut self, program: Vec<u8>) {
+    pub fn load_snake(&mut self, program: Vec<u8>) {
         let mut idx = 0;
         for data in program {
-            self.memory_write_u8(GAME_PROGRAM_START_PC + idx, data);
+            self.memory_write_u8(SNAKE_6502_PC + idx, data);
             idx += 1;
         }
-        self.memory_write_u16(PROGRAM_START_ADDR, GAME_PROGRAM_START_PC);
+        self.memory_write_u16(RESET_VECTOR, SNAKE_6502_PC);
+    }
+
+    pub fn reset_state_snake(&mut self) {
+        self.reset_registers();
+        self.reset_flags();
+        self.set_program_counter(PROGRAM_START_PC + SNAKE_6502_PC); /*self.memory_read_u16(RESET_VECTOR)*/
+        self.set_stack_pointer(0xfd);
     }
 
     pub fn reset_state(&mut self) {
         self.reset_registers();
         self.reset_flags();
-        self.set_program_counter(self.memory_read_u16(PROGRAM_START_ADDR));
-        self.set_stack_pointer(0xff);
+        self.set_program_counter(self.memory_read_u16(RESET_VECTOR));
+        self.set_stack_pointer(0xfd);
     }
 
     pub fn run(&mut self) {
@@ -69,15 +74,8 @@ impl NNES {
         }
     }
 
-    pub fn play(&mut self, program: Vec<u8>) {
-        self.load(program);
+    pub fn play(&mut self) {
         self.reset_state();
-        self.run();
-    }
-
-    pub fn play_test(&mut self, program: Vec<u8>) {
-        self.load(program);
-        self.set_program_counter(self.memory_read_u16(PROGRAM_START_ADDR));
         self.run();
     }
 }
