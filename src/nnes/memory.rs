@@ -50,8 +50,8 @@ impl NNES {
         if addr == 0xffff {
             panic!("Can not write two bytes at one byte location (end of memory reached)");
         }
-        let low: u16 = data & 0x00ff;
-        let high: u16 = (data & 0xff00) >> 8;
+        let low: u16 = data & LOWER_BYTE;
+        let high: u16 = (data & UPPER_BYTE) >> 8;
         self.memory[addr as usize] = low as u8;
         self.memory[addr as usize + 1] = high as u8;
     }
