@@ -31,6 +31,9 @@ impl NNES {
     }
 
     pub fn memory_write_u8(&mut self, addr: u16, data: u8) {
+        if (0x0200..=0x05FF).contains(&addr) {
+            println!("VRAM WRITE {:04X} = {:02X}", addr, data);
+        }
         self.memory[addr as usize] = data;
     }
 
@@ -105,8 +108,8 @@ impl NNES {
         self.set_program_counter(pc + 1);
         match index {
             RegisterOffset::None => addr as u16,
-            RegisterOffset::XIndex => (addr + self.get_register(Register::XIndex)) as u16,
-            RegisterOffset::YIndex => (addr + self.get_register(Register::YIndex)) as u16,
+            RegisterOffset::XIndex => addr.wrapping_add(self.get_register(Register::XIndex)) as u16,
+            RegisterOffset::YIndex => addr.wrapping_add(self.get_register(Register::YIndex)) as u16,
         }
     }
 
@@ -128,22 +131,20 @@ impl NNES {
         }
     }
 
-    fn handle_indirect(&mut self, index: RegisterOffset) -> u16 {
+    fn handle_indirect_xy(&mut self, index: RegisterOffset) -> u16 {
         let pc: u16 = self.get_program_counter();
-        let indirect: u16 = self.memory_read_u16(pc);
-        self.set_program_counter(pc + 2);
+        let indirect: u8 = self.memory_read_u8(pc);
+        self.set_program_counter(pc + 1);
         match index {
-            RegisterOffset::None => {
-                self.memory_read_u16(indirect)
-            }
             RegisterOffset::XIndex => {
                 let offset: u8 = self.get_register(Register::XIndex);
-                self.memory_read_u16(indirect + offset as u16)
+                self.memory_read_u16(indirect as u16 + offset as u16)
             }
             RegisterOffset::YIndex => {
                 let offset: u8 = self.get_register(Register::YIndex);
-                self.memory_read_u16(indirect) + offset as u16
+                self.memory_read_u16(indirect as u16) + offset as u16
             }
+            _ => 0,
         }
     }
 
@@ -157,9 +158,9 @@ impl NNES {
             AddressingMode::Absolute => self.handle_absolute(RegisterOffset::None),
             AddressingMode::AbsoluteX => self.handle_absolute(RegisterOffset::XIndex),
             AddressingMode::AbsoluteY => self.handle_absolute(RegisterOffset::YIndex),
-            AddressingMode::Indirect => self.handle_indirect(RegisterOffset::None),
-            AddressingMode::IndirectX => self.handle_indirect(RegisterOffset::XIndex),
-            AddressingMode::IndirectY => self.handle_indirect(RegisterOffset::YIndex),
+            AddressingMode::Indirect => self.handle_indirect_xy(RegisterOffset::None),
+            AddressingMode::IndirectX => self.handle_indirect_xy(RegisterOffset::XIndex),
+            AddressingMode::IndirectY => self.handle_indirect_xy(RegisterOffset::YIndex),
             _ => 0,
         }
     }
