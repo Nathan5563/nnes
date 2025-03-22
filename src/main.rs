@@ -169,7 +169,6 @@ fn main() {
 
 #[cfg(test)]
 mod test {
-    use std::env;
     use super::*;
 
     use trace::trace;

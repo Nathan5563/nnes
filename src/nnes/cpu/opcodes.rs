@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::nnes::{IRQ_VECTOR, NNES};
 use crate::nnes::memory::{AddressingMode, Mem};
-use crate::nnes::cpu::flags::Flag;
+use crate::nnes::cpu::flags::{Flag, BF, CF, VF, NF, DF, IF, ZF};
 use crate::nnes::cpu::registers::Register;
 use crate::types::{BIT_0, BIT_6, BIT_7, LOWER_BYTE, UPPER_BYTE};
 
@@ -344,8 +344,7 @@ impl NNES {
     }
 
     pub fn handle_php(&mut self) {
-        self.set_flag(Flag::Break, true);
-        self.stack_push_u8(self.get_flags());
+        self.stack_push_u8(self.get_flags() | BF);
     }
 
     pub fn handle_pla(&mut self) {
@@ -355,8 +354,12 @@ impl NNES {
 
     pub fn handle_plp(&mut self) {
         let data: u8 = self.stack_pop_u8();
-        self.set_flags(data);
-        self.set_flag(Flag::Break, false);
+        self.set_flag(Flag::Carry, data & CF != 0);
+        self.set_flag(Flag::Zero, data & ZF != 0);
+        self.set_flag(Flag::InterruptDisable, data & IF != 0);
+        self.set_flag(Flag::DecimalMode, data & DF != 0);
+        self.set_flag(Flag::Overflow, data & VF != 0);
+        self.set_flag(Flag::Negative, data & NF != 0);
     }
 
     pub fn handle_and(&mut self, mode: AddressingMode) {
