@@ -18,11 +18,11 @@ impl Bus {
 
     fn read_prg_rom(&self, mut addr: u16) -> u8 {
         addr -= PRG_ROM_MEM_START;
-        if (self.rom.get_prg_rom_length() == PRG_ROM_PAGE_SIZE as usize) && (addr > PRG_ROM_PAGE_SIZE as u16)
+        if (self.rom.prg_rom.len() == PRG_ROM_PAGE_SIZE as usize) && (addr >= PRG_ROM_PAGE_SIZE as u16)
         {
-            addr &= PRG_ROM_PAGE_SIZE as u16;
+            addr %= PRG_ROM_PAGE_SIZE as u16;
         }
-        self.rom.read_prg_rom(addr)
+        self.rom.prg_rom[addr as usize]
     }
 }
 

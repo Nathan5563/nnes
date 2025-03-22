@@ -58,12 +58,4 @@ impl Rom {
             rom
         })
     }
-
-    pub fn get_prg_rom_length(&self) -> usize {
-        self.prg_rom.len()
-    }
-
-    pub fn read_prg_rom(&self, addr: u16) -> u8 {
-        self.prg_rom[addr as usize]
-    }
 }
