@@ -176,12 +176,7 @@ mod test {
 
     #[test]
     fn nestest() {
-        let args: Vec<String> = env::args().collect();
-        if args.len() != 2 {
-            eprintln!("Usage: cargo run -- <path to rom>");
-            std::process::exit(1);
-        }
-        let file_path: &str = &args[1];
+        let file_path: &str = "tests/nestest/nestest.nes";
         let bytes: Vec<u8> = std::fs::read(file_path).unwrap();
         let rom: Rom = Rom::new(&bytes).unwrap();
         let bus: Bus = Bus::new(rom);
