@@ -135,8 +135,8 @@ impl NNES {
         self.set_program_counter(pc + 2);
         match index {
             RegisterOffset::None => addr,
-            RegisterOffset::XIndex => addr + self.get_register(Register::XIndex) as u16,
-            RegisterOffset::YIndex => addr + self.get_register(Register::YIndex) as u16,
+            RegisterOffset::XIndex => ((addr as u32 + self.get_register(Register::XIndex) as u32) & 0x0000ffff) as u16,
+            RegisterOffset::YIndex => ((addr as u32 + self.get_register(Register::YIndex) as u32) & 0x0000ffff) as u16,
         }
     }
 
@@ -147,11 +147,13 @@ impl NNES {
         match index {
             RegisterOffset::XIndex => {
                 let offset: u8 = self.get_register(Register::XIndex);
-                self.memory_read_u16(indirect as u16 + offset as u16)
+                self.memory_read_u16(((indirect as u32 + offset as u32) & 0x0000ffff) as u16)
             }
             RegisterOffset::YIndex => {
                 let offset: u8 = self.get_register(Register::YIndex);
-                self.memory_read_u16(indirect as u16) + offset as u16
+                let mut res: u32 = self.memory_read_u16(indirect as u16) as u32 + offset as u32;
+                res &= 0x0000ffff;
+                res as u16
             }
             _ => 0,
         }
