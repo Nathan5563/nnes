@@ -25,6 +25,18 @@ impl OpCode {
         }
     }
 
+    pub fn get_instruction(&self) -> &String {
+        &self.instruction
+    }
+
+    pub fn get_bytes(&self) -> u8 {
+        self.bytes
+    }
+
+    pub fn get_cycles(&self) -> u8 {
+        self.cycles
+    }
+
     pub fn get_addressing_mode(&self) -> AddressingMode {
         self.mode
     }
