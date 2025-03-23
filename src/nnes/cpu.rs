@@ -6,12 +6,13 @@ pub mod registers;
 use crate::nnes::NNES;
 use crate::nnes::memory::{AddressingMode, Mem};
 use crate::nnes::cpu::opcodes::opcodes_map;
+use crate::utils::add_mod_16bit;
 
 impl NNES {
     pub fn step(&mut self, exit: &mut bool) {
         let pc: u16 = self.get_program_counter();
         let code: u8 = self.memory_read_u8(pc);
-        self.set_program_counter(pc + 1);
+        self.set_program_counter(add_mod_16bit(pc, 1));
         let ins = opcodes_map
             .get(&code)
             .expect(&format!("OpCode {:x} is not recognized", code));

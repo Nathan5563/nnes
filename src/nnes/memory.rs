@@ -1,6 +1,7 @@
-use crate::types::{LOWER_BYTE, UPPER_BYTE};
-use crate::nnes::NNES;
 use crate::nnes::cpu::registers::Register;
+use crate::nnes::NNES;
+use crate::types::{LOWER_BYTE, UPPER_BYTE};
+use crate::utils::{add_mod_16bit, add_mod_8bit};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressingMode {
@@ -29,24 +30,20 @@ enum RegisterOffset {
 
 pub trait Mem {
     fn memory_read_u8(&self, addr: u16) -> u8;
+
     fn memory_write_u8(&mut self, addr: u16, data: u8);
+
     fn memory_read_u16(&self, addr: u16) -> u16 {
-        if addr == 0xffff {
-            panic!("Can not read two bytes at one byte location (end of ram reached)");
-        }
         let low: u8 = self.memory_read_u8(addr);
-        let high: u8 = self.memory_read_u8(addr + 1);
+        let high: u8 = self.memory_read_u8(add_mod_16bit(addr, 1));
         ((high as u16) << 8) | (low as u16)
     }
 
     fn memory_write_u16(&mut self, addr: u16, data: u16) {
-        if addr == 0xffff {
-            panic!("Can not write two bytes at one byte location (end of ram reached)");
-        }
         let low: u16 = data & LOWER_BYTE;
         let high: u16 = (data & UPPER_BYTE) >> 8;
         self.memory_write_u8(addr, low as u8);
-        self.memory_write_u8(addr, high as u8);
+        self.memory_write_u8(add_mod_16bit(addr, 1), high as u8);
     }
 }
 
@@ -74,8 +71,7 @@ impl NNES {
         self.memory_write_u8(STACK_OFFSET + stk_ptr as u16, data);
         if stk_ptr == 0 {
             stk_ptr = 0xff;
-        }
-        else {
+        } else {
             stk_ptr -= 1;
         }
         self.set_stack_pointer(stk_ptr);
@@ -85,8 +81,7 @@ impl NNES {
         let mut stk_ptr: u8 = self.get_stack_pointer();
         if stk_ptr == 0xff {
             stk_ptr = 0;
-        }
-        else {
+        } else {
             stk_ptr += 1;
         }
         self.set_stack_pointer(stk_ptr);
@@ -107,53 +102,65 @@ impl NNES {
     fn handle_immediate(&mut self) -> u16 {
         let pc: u16 = self.get_program_counter();
         let op: u8 = self.memory_read_u8(pc);
-        self.set_program_counter(pc + 1);
+        self.set_program_counter(add_mod_16bit(pc, 1));
         op as u16
     }
 
     fn handle_zero_page(&mut self, index: RegisterOffset) -> u16 {
         let pc: u16 = self.get_program_counter();
         let addr: u8 = self.memory_read_u8(pc);
-        self.set_program_counter(pc + 1);
+        self.set_program_counter(add_mod_16bit(pc, 1));
         match index {
             RegisterOffset::None => addr as u16,
-            RegisterOffset::XIndex => addr.wrapping_add(self.get_register(Register::XIndex)) as u16,
-            RegisterOffset::YIndex => addr.wrapping_add(self.get_register(Register::YIndex)) as u16,
+            RegisterOffset::XIndex => {
+                add_mod_8bit(addr, self.get_register(Register::XIndex)) as u16
+            }
+            RegisterOffset::YIndex => {
+                add_mod_8bit(addr, self.get_register(Register::YIndex)) as u16
+            }
         }
     }
 
     fn handle_relative(&mut self) -> u16 {
         let pc: u16 = self.get_program_counter();
         let offset: u8 = self.memory_read_u8(pc);
-        self.set_program_counter(pc + 1);
+        self.set_program_counter(add_mod_16bit(pc, 1));
         offset as u16
     }
 
     fn handle_absolute(&mut self, index: RegisterOffset) -> u16 {
         let pc: u16 = self.get_program_counter();
         let addr: u16 = self.memory_read_u16(pc);
-        self.set_program_counter(pc + 2);
+        self.set_program_counter(add_mod_16bit(pc, 2));
         match index {
             RegisterOffset::None => addr,
-            RegisterOffset::XIndex => ((addr as u32 + self.get_register(Register::XIndex) as u32) & 0x0000ffff) as u16,
-            RegisterOffset::YIndex => ((addr as u32 + self.get_register(Register::YIndex) as u32) & 0x0000ffff) as u16,
+            RegisterOffset::XIndex => {
+                add_mod_16bit(addr, self.get_register(Register::XIndex) as u16)
+            }
+            RegisterOffset::YIndex => {
+                add_mod_16bit(addr, self.get_register(Register::YIndex) as u16)
+            }
         }
     }
 
     fn handle_indirect_xy(&mut self, index: RegisterOffset) -> u16 {
         let pc: u16 = self.get_program_counter();
         let indirect: u8 = self.memory_read_u8(pc);
-        self.set_program_counter(pc + 1);
+        self.set_program_counter(add_mod_16bit(pc, 1));
         match index {
             RegisterOffset::XIndex => {
                 let offset: u8 = self.get_register(Register::XIndex);
-                self.memory_read_u16(((indirect as u32 + offset as u32) & 0x0000ffff) as u16)
+                let eff_addr: u8 = add_mod_8bit(indirect, offset);
+                let low: u8 = self.memory_read_u8(eff_addr as u16);
+                let high: u8 = self.memory_read_u8(add_mod_8bit(eff_addr, 1) as u16);
+                ((high as u16) << 8) | (low as u16)
             }
             RegisterOffset::YIndex => {
                 let offset: u8 = self.get_register(Register::YIndex);
-                let mut res: u32 = self.memory_read_u16(indirect as u16) as u32 + offset as u32;
-                res &= 0x0000ffff;
-                res as u16
+                let eff_addrl: u8 = self.memory_read_u8(indirect as u16);
+                let eff_addrh: u8 = self.memory_read_u8(add_mod_8bit(indirect, 1) as u16);
+                let eff_addr: u16 = ((eff_addrh as u16) << 8) | (eff_addrl as u16);
+                add_mod_16bit(eff_addr, offset as u16)
             }
             _ => 0,
         }
