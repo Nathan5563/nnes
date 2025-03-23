@@ -5,6 +5,7 @@ use crate::nnes::memory::{AddressingMode, Mem};
 use crate::nnes::cpu::flags::{Flag, BF, CF, VF, NF, DF, IF, ZF};
 use crate::nnes::cpu::registers::Register;
 use crate::types::{BIT_0, BIT_6, BIT_7, LOWER_BYTE, UPPER_BYTE};
+use crate::utils::{add_mod_8bit, add_mod_16bit};
 
 pub struct OpCode {
     code: u8,
@@ -258,7 +259,7 @@ impl NNES {
 
     pub fn handle_txs(&mut self) {
         let reg_x: u8 = self.get_register(Register::XIndex);
-        self.set_stack_pointer_with_flags(reg_x);
+        self.set_stack_pointer(reg_x);
     }
 
     pub fn handle_tya(&mut self) {
@@ -353,13 +354,13 @@ impl NNES {
     }
 
     pub fn handle_plp(&mut self) {
-        let data: u8 = self.stack_pop_u8();
-        self.set_flag(Flag::Carry, data & CF != 0);
-        self.set_flag(Flag::Zero, data & ZF != 0);
-        self.set_flag(Flag::InterruptDisable, data & IF != 0);
-        self.set_flag(Flag::DecimalMode, data & DF != 0);
-        self.set_flag(Flag::Overflow, data & VF != 0);
-        self.set_flag(Flag::Negative, data & NF != 0);
+        let flags: u8 = self.stack_pop_u8();
+        self.set_flag(Flag::Carry, flags & CF != 0);
+        self.set_flag(Flag::Zero, flags & ZF != 0);
+        self.set_flag(Flag::InterruptDisable, flags & IF != 0);
+        self.set_flag(Flag::DecimalMode, flags & DF != 0);
+        self.set_flag(Flag::Overflow, flags & VF != 0);
+        self.set_flag(Flag::Negative, flags & NF != 0);
     }
 
     pub fn handle_and(&mut self, mode: AddressingMode) {
@@ -435,54 +436,56 @@ impl NNES {
         self.shift(mode, false, true);
     }
 
-    fn add(&mut self, num1: u8, mut num2: u8, twos_complement: bool, with_carry: bool) -> u8 {
-        let mut cbit: u8 = 0;
-        if self.get_flag(Flag::Carry) && with_carry {
+    fn add(&mut self, num1: u8, mut num2: u8, twos_complement: bool) -> u8 {
+        let cbit: u8;
+        if self.get_flag(Flag::Carry) {
             cbit = 1;
-            self.set_flag(Flag::Carry, false);
-        }
-        let mut res: u16;
-        if twos_complement {
-            num2 = num2.wrapping_neg();
-            cbit ^= 1;
-            res = num1 as u16 + num2 as u16;
-            if with_carry {
-                res -= cbit as u16;
-            }
-        } else {
-            res = num1 as u16 + num2 as u16;
-            if with_carry {
-                res += cbit as u16;
-            }
-        }
-        if with_carry {
-            if res & UPPER_BYTE as u16 != 0 {
-                self.set_flag(Flag::Carry, true);
-            }
-            res &= LOWER_BYTE;
-            if (num1 ^ res as u8) & (num2 ^ res as u8) & BIT_7 != 0 {
-                self.set_flag(Flag::Overflow, true);
-            } else {
-                self.set_flag(Flag::Overflow, false);
-            }
         }
         else {
-            res &= LOWER_BYTE;
+            cbit = 0;
         }
+        
+        let mut res: u16;
+        if twos_complement {
+            num2 = !num2;
+            res = num1 as u16 + num2 as u16 + cbit as u16;
+            if (res as i8) < 0 {
+                self.set_flag(Flag::Carry, false);
+            }
+            else {
+                self.set_flag(Flag::Carry, true);
+            }
+        } else {
+            res = num1 as u16 + num2 as u16 + cbit as u16;
+            if res > 0xff {
+                self.set_flag(Flag::Carry, true);
+            }
+            else {
+                self.set_flag(Flag::Carry, false);
+            }
+        }
+
+        res &= LOWER_BYTE;
+        if (num1 ^ res as u8) & (num2 ^ res as u8) & BIT_7 != 0 {
+            self.set_flag(Flag::Overflow, true);
+        } else {
+            self.set_flag(Flag::Overflow, false);
+        }
+
         res as u8
     }
 
     pub fn handle_adc(&mut self, mode: AddressingMode) {
         let reg_acc: u8 = self.get_register(Register::Accumulator);
         let data: u8 = self.get_data(mode);
-        let sum: u8 = self.add(reg_acc, data, false, true);
+        let sum: u8 = self.add(reg_acc, data, false);
         self.set_register_with_flags(Register::Accumulator, sum);
     }
 
     pub fn handle_sbc(&mut self, mode: AddressingMode) {
         let reg_acc: u8 = self.get_register(Register::Accumulator);
         let data: u8 = self.get_data(mode);
-        let difference: u8 = self.add(reg_acc, data, true, true);
+        let difference: u8 = self.add(reg_acc, data, true);
         self.set_register_with_flags(Register::Accumulator, difference);
     }
 
@@ -551,7 +554,8 @@ impl NNES {
     }
 
     pub fn handle_brk(&mut self) {
-        self.set_program_counter(self.get_program_counter() + 1); // implied padding byte
+        let pc: u16 = self.get_program_counter();
+        self.set_program_counter(add_mod_16bit(pc, 1)); // implied padding byte
         self.stack_push_u16(self.get_program_counter());
         self.handle_php();
         let irq: u16 = self.memory_read_u16(IRQ_VECTOR);
@@ -560,40 +564,33 @@ impl NNES {
 
     pub fn handle_nop(&mut self) {}
 
-    pub fn handle_cmp(&mut self, mode: AddressingMode) {
-        let reg_acc: u8 = self.get_register(Register::Accumulator);
-        let data: u8 = self.get_data(mode);
-        let diff = self.add(reg_acc, data, true, false);
+    fn cmp(&mut self, num1: u8, num2: u8) {
+        let tcnum2: u8 = add_mod_8bit(!num2, 1);
+        let diff: u8 = add_mod_8bit(num1, tcnum2);
         self.update_op_flags(diff);
-        if reg_acc >= data {
+        if num1 >= num2 {
             self.set_flag(Flag::Carry, true);
         } else {
             self.set_flag(Flag::Carry, false);
         }
+    }
+
+    pub fn handle_cmp(&mut self, mode: AddressingMode) {
+        let reg_acc: u8 = self.get_register(Register::Accumulator);
+        let data: u8 = self.get_data(mode);
+        self.cmp(reg_acc, data);
     }
 
     pub fn handle_cmx(&mut self, mode: AddressingMode) {
         let reg_x: u8 = self.get_register(Register::XIndex);
         let data: u8 = self.get_data(mode);
-        let diff = self.add(reg_x, data, true, false);
-        self.update_op_flags(diff);
-        if reg_x >= data {
-            self.set_flag(Flag::Carry, true);
-        } else {
-            self.set_flag(Flag::Carry, false);
-        }
+        self.cmp(reg_x, data);
     }
 
     pub fn handle_cmy(&mut self, mode: AddressingMode) {
         let reg_y: u8 = self.get_register(Register::YIndex);
         let data: u8 = self.get_data(mode);
-        let diff = self.add(reg_y, data, true, false);
-        self.update_op_flags(diff);
-        if reg_y >= data {
-            self.set_flag(Flag::Carry, true);
-        } else {
-            self.set_flag(Flag::Carry, false);
-        }
+        self.cmp(reg_y, data);
     }
 
     pub fn handle_jmp(&mut self, mode: AddressingMode) {
@@ -605,7 +602,7 @@ impl NNES {
         else {
             let pc: u16 = self.get_program_counter();
             let indirect: u16 = self.memory_read_u16(pc);
-            self.set_program_counter(pc + 2);
+            self.set_program_counter(add_mod_16bit(pc, 2));
             if indirect & LOWER_BYTE == LOWER_BYTE {
                 let lower_byte: u8 = self.memory_read_u8(indirect);
                 let upper_byte: u8 = self.memory_read_u8(indirect & UPPER_BYTE);
@@ -627,15 +624,19 @@ impl NNES {
 
     pub fn handle_rti(&mut self) {
         let flags: u8 = self.stack_pop_u8();
+        self.set_flag(Flag::Carry, flags & CF != 0);
+        self.set_flag(Flag::Zero, flags & ZF != 0);
+        self.set_flag(Flag::InterruptDisable, flags & IF != 0);
+        self.set_flag(Flag::DecimalMode, flags & DF != 0);
+        self.set_flag(Flag::Overflow, flags & VF != 0);
+        self.set_flag(Flag::Negative, flags & NF != 0);
         let pc: u16 = self.stack_pop_u16();
-        self.set_flags(flags);
-        self.set_flag(Flag::Break, false);
         self.set_program_counter(pc);
     }
 
     pub fn handle_rts(&mut self) {
         let pc: u16 = self.stack_pop_u16();
-        self.set_program_counter(pc + 1);
+        self.set_program_counter(add_mod_16bit(pc, 1));
     }
 
     fn branch(&mut self, jmp: bool) {
