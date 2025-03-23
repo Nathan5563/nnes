@@ -5,6 +5,7 @@ extern crate lazy_static;
 
 mod nnes;
 mod types;
+mod utils;
 mod trace;
 
 use nnes::NNES;
