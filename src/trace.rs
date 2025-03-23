@@ -1,8 +1,11 @@
+use sdl2::libc::Elf32_Addr;
+
 use crate::nnes::cpu::opcodes::opcodes_map;
 use crate::nnes::cpu::registers::Register;
 use crate::nnes::memory::{AddressingMode, Mem};
 use crate::nnes::NNES;
-use crate::types::LOWER_BYTE;
+use crate::types::{LOWER_BYTE, UPPER_BYTE};
+use crate::utils::{add_mod_16bit, add_mod_8bit};
 
 /**
  * Examples:
@@ -44,109 +47,116 @@ pub fn trace(nnes: &mut NNES) {
             asm.push_str("                           ");
         }
         AddressingMode::Immediate => {
-            byte1 = nnes.memory_read_u8(pc + 1);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
             asm.push_str(format!("#${:02X}", byte1).as_str());
             asm.push_str("                        ");
         }
         AddressingMode::ZeroPage => {
-            byte1 = nnes.memory_read_u8(pc + 1);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
             asm.push_str(format!("${:02X} ", byte1).as_str());
             let addr: u8 = nnes.memory_read_u8(byte1 as u16);
             asm.push_str(format!("= {:02X}", addr).as_str());
             asm.push_str("                    ");
         }
         AddressingMode::ZeroPageX => {
-            byte1 = nnes.memory_read_u8(pc + 1);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
             asm.push_str(format!("${:02X},X ", byte1).as_str());
-            let zp_addr: u8 = nnes.memory_read_u8(byte1 as u16);
-            let zp_addr_x: u16 = (zp_addr + nnes.get_register(Register::XIndex)) as u16;
-            let res: u8 = (zp_addr_x & LOWER_BYTE) as u8;
-            asm.push_str(format!("@ {:02X} ", res).as_str());
-            let data: u8 = nnes.memory_read_u8(zp_addr as u16);
+            let zp_addr_x: u8 = add_mod_8bit(byte1, nnes.get_register(Register::XIndex));
+            asm.push_str(format!("@ {:02X} ", zp_addr_x).as_str());
+            let data: u8 = nnes.memory_read_u8(zp_addr_x as u16);
             asm.push_str(format!("= {:02X}", data).as_str());
             asm.push_str("             ");
         }
         AddressingMode::ZeroPageY => {
-            byte1 = nnes.memory_read_u8(pc + 1);
-            asm.push_str(format!("${:02X},X ", byte1).as_str());
-            let zp_addr: u8 = nnes.memory_read_u8(byte1 as u16);
-            let zp_addr_y: u16 = (zp_addr + nnes.get_register(Register::YIndex)) as u16;
-            let res: u8 = (zp_addr_y & LOWER_BYTE) as u8;
-            asm.push_str(format!("@ {:02X} ", res).as_str());
-            let data: u8 = nnes.memory_read_u8(zp_addr as u16);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
+            asm.push_str(format!("${:02X},Y ", byte1).as_str());
+            let zp_addr_y: u8 = add_mod_8bit(byte1, nnes.get_register(Register::YIndex));
+            asm.push_str(format!("@ {:02X} ", zp_addr_y).as_str());
+            let data: u8 = nnes.memory_read_u8(zp_addr_y as u16);
             asm.push_str(format!("= {:02X}", data).as_str());
             asm.push_str("             ");
         }
         AddressingMode::Absolute => {
-            byte1 = nnes.memory_read_u8(pc + 1);
-            byte2 = nnes.memory_read_u8(pc + 2);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
+            byte2 = nnes.memory_read_u8(add_mod_16bit(pc, 2));
             let addr: u16 = ((byte2 as u16) << 8) | (byte1 as u16);
             asm.push_str(format!("${:04X} ", addr).as_str());
             if instruction != "JMP" && instruction != "JSR" {
                 let data: u8 = nnes.memory_read_u8(addr);
                 asm.push_str(format!("= {:02X}", data).as_str());
                 asm.push_str("                  ");
-            }
-            else {
+            } else {
                 asm.push_str("                      ");
             }
         }
         AddressingMode::AbsoluteX => {
-            byte1 = nnes.memory_read_u8(pc + 1);
-            byte2 = nnes.memory_read_u8(pc + 2);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
+            byte2 = nnes.memory_read_u8(add_mod_16bit(pc, 2));
             let base_addr: u16 = ((byte2 as u16) << 8) | (byte1 as u16);
             asm.push_str(format!("${:04X},X ", base_addr).as_str());
-            let addr_x: u16 = base_addr + nnes.get_register(Register::XIndex) as u16;
+            let addr_x: u16 = add_mod_16bit(base_addr, nnes.get_register(Register::XIndex) as u16);
             asm.push_str(format!("@ {:04X} ", addr_x).as_str());
             let data: u8 = nnes.memory_read_u8(addr_x);
             asm.push_str(format!("= {:02X}", data).as_str());
             asm.push_str("         ");
         }
         AddressingMode::AbsoluteY => {
-            byte1 = nnes.memory_read_u8(pc + 1);
-            byte2 = nnes.memory_read_u8(pc + 2);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
+            byte2 = nnes.memory_read_u8(add_mod_16bit(pc, 2));
             let base_addr: u16 = ((byte2 as u16) << 8) | (byte1 as u16);
             asm.push_str(format!("${:04X},Y ", base_addr).as_str());
-            let addr_y: u16 = base_addr + nnes.get_register(Register::YIndex) as u16;
+            let addr_y: u16 = add_mod_16bit(base_addr, nnes.get_register(Register::YIndex) as u16);
             asm.push_str(format!("@ {:04X} ", addr_y).as_str());
             let data: u8 = nnes.memory_read_u8(addr_y);
             asm.push_str(format!("= {:02X}", data).as_str());
             asm.push_str("         ");
         }
         AddressingMode::Relative => {
-            byte1 = nnes.memory_read_u8(pc + 1);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
             let offset: i8 = byte1 as i8;
             let res: i32 = nnes.get_program_counter() as i32 + offset as i32 + 2;
             asm.push_str(format!("${:04X}", res as u16).as_str());
             asm.push_str("                       ");
         }
         AddressingMode::Indirect => {
-            byte1 = nnes.memory_read_u8(pc + 1);
-            byte2 = nnes.memory_read_u8(pc + 2);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
+            byte2 = nnes.memory_read_u8(add_mod_16bit(pc, 2));
             let indirect: u16 = ((byte2 as u16) << 8) | (byte1 as u16);
-            let addr: u16 = nnes.memory_read_u16(indirect);
-            asm.push_str(format!("${:04X}", addr).as_str());
-            asm.push_str("                       ");
+            asm.push_str(format!("(${:04X}) ", indirect).as_str());
+            let addrl: u8 = nnes.memory_read_u8(indirect);
+            let addrh: u8;
+            if indirect & LOWER_BYTE == 0xff {
+                addrh = nnes.memory_read_u8(indirect & UPPER_BYTE);
+            }
+            else {
+                addrh = nnes.memory_read_u8(indirect + 1);
+            }
+            let addr: u16 = ((addrh as u16) << 8) | (addrl as u16);
+            asm.push_str(format!("= {:04X}", addr).as_str());
+            asm.push_str("              ");
         }
         AddressingMode::IndirectX => {
-            byte1 = nnes.memory_read_u8(pc + 1);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
             asm.push_str(format!("(${:02X},X) ", byte1).as_str());
-            let indirect: u16 =
-                (byte1 as u16 + nnes.get_register(Register::XIndex) as u16) & 0x00ff;
-            asm.push_str(format!("@ {:04X} ", indirect).as_str());
-            let addr: u16 = nnes.memory_read_u16(indirect);
+            let indirect: u8 = add_mod_8bit(byte1, nnes.get_register(Register::XIndex));
+            asm.push_str(format!("@ {:02X} ", indirect).as_str());
+            let addrl: u8 = nnes.memory_read_u8(indirect as u16);
+            let addrh: u8 = nnes.memory_read_u8(add_mod_8bit(indirect, 1) as u16);
+            let addr: u16 = ((addrh as u16) << 8) | (addrl as u16);
             asm.push_str(format!("= {:04X} ", addr).as_str());
             let data: u8 = nnes.memory_read_u8(addr);
             asm.push_str(format!("= {:02X}", data).as_str());
             asm.push_str("    ");
         }
         AddressingMode::IndirectY => {
-            byte1 = nnes.memory_read_u8(pc + 1);
+            byte1 = nnes.memory_read_u8(add_mod_16bit(pc, 1));
             asm.push_str(format!("(${:02X}),Y ", byte1).as_str());
-            let addr: u16 = nnes.memory_read_u16(byte1 as u16);
-            asm.push_str(format!("@ {:04X} ", addr).as_str());
-            let indexed: u16 = addr + nnes.get_register(Register::YIndex) as u16; 
-            asm.push_str(format!("= {:04X} ", indexed).as_str());
+            let addrl: u8 = nnes.memory_read_u8(byte1 as u16);
+            let addrh: u8 = nnes.memory_read_u8(add_mod_8bit(byte1, 1) as u16);
+            let addr: u16 = ((addrh as u16) << 8) | (addrl as u16);
+            asm.push_str(format!("= {:04X} ", addr).as_str());
+            let indexed: u16 = add_mod_16bit(addr, nnes.get_register(Register::YIndex) as u16);
+            asm.push_str(format!("@ {:04X} ", indexed).as_str());
             let data: u8 = nnes.memory_read_u8(indexed);
             asm.push_str(format!("= {:02X}", data).as_str());
             asm.push_str("  ");
