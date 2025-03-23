@@ -27,7 +27,7 @@ impl Bus {
 }
 
 impl Mem for Bus {
-    fn memory_read_u8(&self, mut addr: u16) -> u8 {
+    fn memory_read_u8(&self, addr: u16) -> u8 {
         let mirrored: u16;
         match addr {
             0x0000..0x2000 => {
@@ -44,7 +44,7 @@ impl Mem for Bus {
         }
     }
 
-    fn memory_write_u8(&mut self, mut addr: u16, data: u8) {
+    fn memory_write_u8(&mut self, addr: u16, data: u8) {
         let mirrored: u16;
         match addr {
             0x0000..0x2000 => {
