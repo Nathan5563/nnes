@@ -35,16 +35,6 @@ impl NNES {
         }
     }
 
-    // New method for game code expecting start at 0x0600
-    pub fn load_snake(&mut self, program: Vec<u8>) {
-        let mut idx = 0;
-        for data in program {
-            self.memory_write_u8(SNAKE_6502_PC + idx, data);
-            idx += 1;
-        }
-        self.memory_write_u16(RESET_VECTOR, SNAKE_6502_PC);
-    }
-
     pub fn reset_state_snake(&mut self) {
         self.reset_registers();
         self.reset_flags();
