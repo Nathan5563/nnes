@@ -35,9 +35,8 @@ impl Mem for Bus {
                 self.ram[mirrored as usize]
             }
             0x2000..0x4000 => {
-                mirrored = addr & 0b100000_00000111;
+                /* mirrored */ _ = addr & 0b100000_00000111;
                 todo!("PPU not yet implemented!");
-                self.ram[mirrored as usize]
             }
             0x8000..=0xffff => self.read_prg_rom(addr),
             _ => todo!("Memory reads not yet implemented at {addr}!"),
@@ -52,9 +51,8 @@ impl Mem for Bus {
                 self.ram[mirrored as usize] = data;
             }
             0x2000..0x4000 => {
-                mirrored = addr & 0b100000_00000111;
+                /* mirrored */ _ = addr & 0b100000_00000111;
                 todo!("PPU not yet implemented!");
-                self.ram[mirrored as usize] = data;
             }
             0x8000..=0xffff => panic!("Attempt to write to PRG ROM"),
             _ => todo!("Memory writes not yet implemented at {addr}!"),
