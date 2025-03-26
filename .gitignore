@@ -1,3 +1,7 @@
-/target
+# Directories
+target
+roms
+tests
+
+# Files
 *.todo
-roms/*
