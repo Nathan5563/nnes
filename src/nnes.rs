@@ -2,6 +2,7 @@ pub mod cpu;
 pub mod memory;
 pub mod bus;
 pub mod rom;
+pub mod ppu;
 
 use bus::Bus;
 use memory::Mem;
@@ -10,7 +11,6 @@ pub static RESET_VECTOR: u16 = 0xfffc;
 pub static IRQ_VECTOR: u16 = 0xfffe;
 pub static PROGRAM_START_PC: u16 = 0x8000;
 pub static PROGRAM_START_STATUS: u8 = 0b00100100;
-pub static SNAKE_6502_PC: u16 = 0x0600; // new for game code
 
 pub struct NNES {
     program_counter: u16,
@@ -35,13 +35,6 @@ impl NNES {
         }
     }
 
-    pub fn reset_state_snake(&mut self) {
-        self.reset_registers();
-        self.reset_flags();
-        self.set_program_counter(PROGRAM_START_PC + SNAKE_6502_PC);
-        self.set_stack_pointer(0xfd);
-    }
-
     pub fn reset_state(&mut self) {
         self.reset_registers();
         self.reset_flags();
@@ -49,23 +42,19 @@ impl NNES {
         self.set_stack_pointer(0xfd);
     }
 
-    pub fn run(&mut self) {
-        self.run_callback(|_| {});
-    }
-
     pub fn run_callback<F>(&mut self, mut callback: F)
     where
         F: FnMut(&mut NNES),
     {
         let mut exit: bool = false;
+        let mut cpu_cycle: u8 = 0;
+        let mut ppu_cycle: u8 = 0;
         while !exit {
             callback(self);
-            self.step(&mut exit);
+            self.cpu_tick(&mut cpu_cycle, &mut exit);
+            self.ppu_tick(&mut ppu_cycle);
+            self.ppu_tick(&mut ppu_cycle);
+            self.ppu_tick(&mut ppu_cycle);
         }
-    }
-
-    pub fn play(&mut self) {
-        self.reset_state();
-        self.run();
     }
 }
