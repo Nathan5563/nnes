@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.5.0"
+bitflags = "2.9.1"
