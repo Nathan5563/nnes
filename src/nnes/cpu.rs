@@ -1,6 +1,7 @@
 mod opcodes;
 
-use opcodes::{opcodes_map, OpCode};
+use opcodes::{opcodes_list, OpCode};
+use super::bus::Bus;
 
 bitflags! {
     struct Flags: u8 {
@@ -74,7 +75,7 @@ impl CPU {
         }
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, bus: &mut Bus) {
         match self.state {
             CPUState::Fetch => {
                 // fetch byte, store in self.cache.lo

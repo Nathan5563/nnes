@@ -1,32 +1,38 @@
-mod cpu;
 mod bus;
+mod cpu;
 
+use bus::Bus;
 use cpu::CPU;
-use bus::{Bus, Cartridge};
 
 pub struct NNES {
     cpu: CPU,
     // ppu: PPU,
     // apu: APU,
+    // mapper? cartridge? something?
     bus: Bus,
 }
 
 impl NNES {
-    pub fn new(rom: Cartridge) -> Self {
-        let bus = Bus::new(rom);
+    pub fn new(/* cartridge: Cartridge */) -> Self {
+        let cpu = CPU::new();
         // let ppu = PPU::new();
         // let apu = APU::new();
-        let cpu = CPU::new();
 
-        // figure out cpu, ppu, apu <=> bus address space
+        let bus = Bus::new();
+        // bus.attach(...)
 
-        NNES { cpu: cpu, /* ppu: ppu, apu: apu, */ bus: bus }
+        NNES {
+            cpu: cpu,
+            // ppu: ppu,
+            // apu: apu,
+            bus: bus,
+        }
     }
 
     pub fn step(&mut self) {
         // figure out master clock, timings, etc
 
-        self.cpu.tick();
+        self.cpu.tick(&mut self.bus);
         // self.ppu.tick();
         // self.ppu.tick();
         // self.ppu.tick();
@@ -34,6 +40,6 @@ impl NNES {
     }
 
     pub fn trace(&mut self) {
-        // grab snapshot of current state for testing roms
+        // for test roms
     }
 }
