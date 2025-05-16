@@ -1,0 +1,51 @@
+Define CPU states
+    Create an enum with FetchOpcode, Decode, AddrCycle { subcycle }, ExecuteCycle, Completion, InterruptCheck.
+
+Build opcode metadata table
+    For each of the 151 opcodes, record:
+        Addressing mode handler pointer
+        Execution callback pointer
+        Any flags (extra page-cross cycle, is read/write/RMW)
+
+Implement addressing-mode micro-ops
+    Write one function per mode (imm, zp, zp_x, abs, abs_x, abs_y, ind_x, ind_y, RMW variants) that on each subcycle index performs exactly one bus action: fetch byte, compute address, dummy read, final read, etc.
+    Return “done” when the final operand fetch/write for that mode is complete.
+
+Implement instruction-execute micro-ops
+    For each opcode family (loads, stores, ALU ops, shifts/rotates, branches, stack ops, interrupts):
+        Write a callback that on each cycle (driven by an internal cycle counter) does exactly one action (push low PC, read vector, set flags, etc.)
+        Return “done” when all per-instruction micro-ops have run.
+
+Wire up the main tick() loop
+    In CPU::tick(), match on the current state and advance:
+        FetchOpcode → read opcode → lookup metadata → Decode
+        Decode → reset subcycle counters → AddrCycle
+        AddrCycle → call addressing-mode micro-op → loop or → ExecuteCycle
+        ExecuteCycle → call exec callback → loop or → Completion
+        Completion → InterruptCheck
+        InterruptCheck → if IRQ/NMI pending, init IRQ micro-ops and go to ExecuteCycle, else → FetchOpcode
+
+Handle interrupts identically
+    Use the same ExecuteCycle mechanism to perform BRK/IRQ micro-ops (stack push, vector fetch).
+
+Incorporate dummy reads/writes everywhere
+    Ensure every addressing-mode routine and RMW handler does the correct dummy bus access on the appropriate cycle, so that memory-mapped I/O side effects line up.
+
+Validate special hardware quirks
+    Page-cross penalty in abs,X, abs,Y, (ind),Y loads only
+    Always-extra cycle for indexed stores (STA abs,X/Y, STA (ind),Y)
+    JMP indirect bug at $xxFF pointer boundaries
+    BRK/IRQ B-flag push semantics
+
+Factor shared helpers
+    set_nz(value) to update N and Z flags
+    do_adc(value), do_sbc(value), do_and(value), etc. for ALU ops
+    transfer(src, dst) for TAX/TXY/etc. with flag updates
+
+Test coverage
+    Run cycle-accuracy tests (Blargg’s nestest, 6502 timing test ROMs)
+    Verify each instruction’s cycle count, dummy reads, and quirk behavior
+
+Documentation & maintenance
+    Comment each addressing-mode and exec-callback with its cycle sequence
+    Keep opcode metadata and micro-ops in sync with NESdev documentation
