@@ -1,7 +1,0 @@
-# Directories
-target
-roms
-tests
-
-# Files
-*.todo
