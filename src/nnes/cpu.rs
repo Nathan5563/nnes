@@ -19,11 +19,8 @@ bitflags! {
 #[derive(Debug, Copy, Clone)]
 pub enum CPUState {
     Fetch,
-    Decode,
-    Address { subcycle: u8 },
+    Decode { subcycle: u8 },
     Execute { subcycle: u8 },
-    Complete,
-    Interrupt,
 }
 
 pub struct CPU {
@@ -78,28 +75,36 @@ impl CPU {
     pub fn tick(&mut self, bus: &mut Bus) {
         match self.state {
             CPUState::Fetch => {
-                // fetch byte, store in self.cache.lo
-                // next: decode
+                let data = Bus::mem_read(bus, self.pc);
+                self.pc += 1;
+
+                if let Some(opcode) = opcodes_list[data as usize].as_ref() {
+                    self.ins = Some(opcode);
+                } else {
+                    unimplemented!();
+                }
+                
+                if self.ins.unwrap().has_decode {
+                    self.state = CPUState::Decode { subcycle: 0 };
+                } else {
+                    self.state = CPUState::Execute { subcycle: 0 }
+                }
             }
-            CPUState::Decode => {
-                // decode opcode in self.cache.lo, construct self.ins
-                // next: address
+            CPUState::Decode { subcycle } => {
+                let done = (self.ins.unwrap().decode_fn)(self, subcycle);
+                if done {
+                    self.state = CPUState::Execute { subcycle: 0 };
+                } else {
+                    self.state = CPUState::Decode { subcycle: subcycle + 1 }
+                }
             }
-            CPUState::Address { subcycle } => {
-                // call address handler function
-                // next: address OR execute
-            }
-            CPUState::Execute { subcycle } => {
-                // call execute handler function
-                // next: execute OR complete
-            }
-            CPUState::Complete => {
-                // check if interrupts are pending
-                // next: interrupt OR fetch
-            }
-            CPUState::Interrupt => {
-                // handle interrupts
-                // next: fetch
+            CPUState::Execute { subcycle } => { // 1 - m cycle(s)
+                let done = (self.ins.unwrap().execute_fn)(self, subcycle);
+                if done {
+                    self.state = CPUState::Fetch;
+                } else {
+                    self.state = CPUState::Execute { subcycle: subcycle + 1 };
+                }
             }
         }
         self.total_ticks += 1;
