@@ -13,3 +13,7 @@ pub fn hi_nibble(n: u8) -> u8 {
 pub fn lo_nibble(n: u8) -> u8 {
     n & 0xF
 }
+
+pub fn bit_7(n: u8) -> u8 {
+    n & 0b1000_0000
+}
