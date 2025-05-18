@@ -51,20 +51,22 @@ pub struct CPU {
     // State machine metadata
     state: CPUState,
     ins: Option<&'static OpCode>,
-    cache: CPUCache,
+    store: CPUStore,
     page_crossed: bool,
     software_interrupt: bool,
     nmi_pending: bool,
     irq_pending: bool,
 
     // Debugging tooling
+    ins_ticks: u8,
     total_ticks: u64,
 }
 
-pub struct CPUCache {
+pub struct CPUStore {
     lo: u8,
     hi: u8,
     addr: u16,
+    data: u8,
     vector: u16,
 }
 
@@ -82,10 +84,11 @@ impl CPU {
 
             state: CPUState::Fetch,
             ins: None,
-            cache: CPUCache {
+            store: CPUStore {
                 lo: 0,
                 hi: 0,
                 addr: 0,
+                data: 0,
                 vector: 0,
             },
             page_crossed: false,
@@ -93,6 +96,7 @@ impl CPU {
             nmi_pending: false,
             irq_pending: false,
 
+            ins_ticks: 0,
             total_ticks: 0,
         }
     }
@@ -109,61 +113,126 @@ impl CPU {
         self.bus.mem_read(STACK_OFFSET + self.sp as u16)
     }
 
+    fn fetch(&mut self) {
+        self.ins_ticks = 0;
+
+        let data = self.bus.mem_read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+
+        if let Some(opcode) = opcodes_list[data as usize].as_ref() {
+            self.ins = Some(opcode);
+        } else {
+            unimplemented!();
+        }
+
+        if self.ins.unwrap().code == 0x00 {
+            self.store.vector = IRQ_VECTOR;
+            self.software_interrupt = true;
+        }
+    }
+
+    fn poll_interrupts(&mut self) -> bool {
+        if self.nmi_pending {
+            self.store.vector = NMI_VECTOR;
+            true
+        } else if self.irq_pending && !self.p.intersects(Flags::INTERRUPT_DISABLE) {
+            self.store.vector = IRQ_VECTOR;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn tick(&mut self) {
         match self.state {
             CPUState::Fetch => {
-                let data = self.bus.mem_read(self.pc);
-                self.pc = self.pc.wrapping_add(1);
+                // Run the cycle
+                self.fetch();
 
-                if let Some(opcode) = opcodes_list[data as usize].as_ref() {
-                    self.ins = Some(opcode);
-                } else {
-                    unimplemented!();
+                let mut interrupt = false;
+                if self.ins.unwrap().cycles - self.ins_ticks == 2 {
+                    // Poll for interrupts after the second to last cycle
+                    interrupt = self.poll_interrupts();
+                } else if self.ins.unwrap().code == 0x00
+                    && self.ins.unwrap().cycles - self.ins_ticks > 2
+                    && self.nmi_pending
+                {
+                    // NMI hijacking BRK
+                    self.store.vector = NMI_VECTOR;
+                    self.nmi_pending = false;
                 }
 
-                if self.ins.unwrap().code == 0 {
-                    self.cache.vector = IRQ_VECTOR;
-                    self.software_interrupt = true;
-                }
-
-                if self.ins.unwrap().decode_fn.is_none() {
-                    self.state = CPUState::Execute { subcycle: 0 };
+                // Choose next state
+                if interrupt {
+                    self.state = CPUState::Interrupt;
                 } else {
-                    self.state = CPUState::Decode { subcycle: 0 };
+                    self.state = if self.ins.unwrap().decode_fn.is_none() {
+                        CPUState::Execute { subcycle: 0 }
+                    } else {
+                        CPUState::Decode { subcycle: 0 }
+                    };
                 }
             }
             CPUState::Decode { subcycle } => {
+                // Run the cycle
                 let done = (self.ins.unwrap().decode_fn.unwrap())(self, subcycle);
-                if done {
-                    self.state = CPUState::Execute { subcycle: 0 };
+
+                let mut interrupt = false;
+                if self.ins.unwrap().cycles - self.ins_ticks == 2 {
+                    // Poll for interrupts in the second to last cycle
+                    interrupt = self.poll_interrupts();
+                }
+
+                // Choose next state
+                if interrupt {
+                    self.state = CPUState::Interrupt;
                 } else {
-                    self.state = CPUState::Decode {
-                        subcycle: subcycle + 1,
+                    self.state = if done {
+                        CPUState::Execute { subcycle: 0 }
+                    } else {
+                        CPUState::Decode {
+                            subcycle: subcycle + 1,
+                        }
                     };
                 }
             }
             CPUState::Execute { subcycle } => {
+                // Run the cycle
                 let done = (self.ins.unwrap().execute_fn)(self, subcycle);
-                if done {
-                    if self.nmi_pending {
-                        self.state = CPUState::Interrupt;
-                        self.cache.vector = NMI_VECTOR;
-                    } else if self.irq_pending && !self.p.intersects(Flags::INTERRUPT_DISABLE) {
-                        self.state = CPUState::Interrupt;
-                        self.cache.vector = IRQ_VECTOR;
-                    } else {
-                        self.state = CPUState::Fetch;
-                    }
+
+                let mut interrupt = false;
+                if self.ins.unwrap().cycles - self.ins_ticks == 2 {
+                    // Poll for interrupts in the second to last cycle
+                    interrupt = self.poll_interrupts();
+                } else if self.ins.unwrap().code == 0x00
+                    && self.ins.unwrap().cycles - self.ins_ticks > 2
+                    && self.nmi_pending
+                {
+                    // NMI hijacking BRK
+                    self.store.vector = NMI_VECTOR;
+                    self.nmi_pending = false;
+                }
+
+                // Choose next state
+                if interrupt {
+                    self.state = CPUState::Interrupt;
                 } else {
-                    self.state = CPUState::Execute {
-                        subcycle: subcycle + 1,
+                    self.state = if done {
+                        CPUState::Fetch
+                    } else {
+                        CPUState::Execute {
+                            subcycle: subcycle + 1,
+                        }
                     };
                 }
             }
             CPUState::Interrupt => {
-
+                // turn off appropriate signals
+                // note that an NMI can hijack an IRQ, and if so, the irq_pending should remain true
             }
         }
+
+        self.ins_ticks += 1;
         self.total_ticks += 1;
     }
 }
