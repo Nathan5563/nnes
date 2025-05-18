@@ -1,6 +1,6 @@
 mod devices;
 
-use super::Cartridge;
+use super::super::Cartridge;
 
 pub trait BusDevice {
     fn contains(&self, addr: u16) -> bool;
