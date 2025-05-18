@@ -84,18 +84,18 @@ impl CPU {
                     unimplemented!();
                 }
                 
-                if self.ins.unwrap().has_decode {
-                    self.state = CPUState::Decode { subcycle: 0 };
+                if self.ins.unwrap().decode_fn.is_none() {
+                    self.state = CPUState::Execute { subcycle: 0 };
                 } else {
-                    self.state = CPUState::Execute { subcycle: 0 }
+                    self.state = CPUState::Decode { subcycle: 0 };
                 }
             }
             CPUState::Decode { subcycle } => {
-                let done = (self.ins.unwrap().decode_fn)(self, subcycle);
+                let done = (self.ins.unwrap().decode_fn.unwrap())(self, subcycle);
                 if done {
                     self.state = CPUState::Execute { subcycle: 0 };
                 } else {
-                    self.state = CPUState::Decode { subcycle: subcycle + 1 }
+                    self.state = CPUState::Decode { subcycle: subcycle + 1 };
                 }
             }
             CPUState::Execute { subcycle } => { // 1 - m cycle(s)

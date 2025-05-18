@@ -92,8 +92,7 @@ impl CPU {
 pub struct OpCode {
     code: u8,
     name: String,
-    pub has_decode: bool,
-    pub decode_fn: fn(&mut CPU, subcycle: u8) -> bool,
+    pub decode_fn: Option<fn(&mut CPU, subcycle: u8) -> bool>,
     pub execute_fn: fn(&mut CPU, subcycle: u8) -> bool,
     cross: bool,  // page crossing affects number of cycles
     branch: bool, // branching affects number of cycles
@@ -104,22 +103,20 @@ impl OpCode {
     pub fn new(
         code: u8,
         name: String,
-        has_decode: bool,
-        decode_fn: fn(&mut CPU, subcycle: u8) -> bool,
+        decode_fn: Option<fn(&mut CPU, subcycle: u8) -> bool>,
         execute_fn: fn(&mut CPU, subcycle: u8) -> bool,
         cross: bool,
         branch: bool,
         penalty: u8,
     ) -> Self {
         OpCode {
-            code: code,
-            name: name,
-            has_decode: has_decode,
-            decode_fn: decode_fn,
-            execute_fn: execute_fn,
-            cross: cross,
-            branch: branch,
-            penalty: penalty,
+            code,
+            name,
+            decode_fn,
+            execute_fn,
+            cross,
+            branch,
+            penalty,
         }
     }
 }
