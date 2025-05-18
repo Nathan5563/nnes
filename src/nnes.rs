@@ -25,11 +25,21 @@ impl NNES {
 
     pub fn step(&mut self) {
         // figure out master clock, timings, etc
+        
+        // CPU runs at master clock / 12 Hz
+        // PPU runs at master clock / 4 Hz
+        // APU runs at master clock / 24 Hz
 
         self.cpu.tick();
         // self.ppu.tick();
         // self.ppu.tick();
         // self.ppu.tick();
+        
+        // self.ppu.tick();
+        self.cpu.tick();
+        // self.ppu.tick();
+        // self.ppu.tick();
+
         // self.apu.tick();
     }
 
