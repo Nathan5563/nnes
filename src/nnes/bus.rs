@@ -1,3 +1,7 @@
+mod devices;
+
+use super::Cartridge;
+
 pub trait BusDevice {
     fn contains(&self, addr: u16) -> bool;
     fn mem_read(&mut self, addr: u16) -> u8;
@@ -10,15 +14,14 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn new() -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
+        let mut memory_handlers = Vec::new();
+        devices::memory_map(&mut memory_handlers, cartridge);
+
         Bus {
-            memory_handlers: Vec::new(),
+            memory_handlers,
             open_bus: 0,
         }
-    }
-
-    pub fn attach<D: BusDevice + 'static>(&mut self, device: D) {
-        self.memory_handlers.push(Box::new(device));
     }
 
     pub fn mem_read(&mut self, addr: u16) -> u8 {

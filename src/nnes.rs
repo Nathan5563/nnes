@@ -3,29 +3,28 @@ mod cpu;
 
 use bus::Bus;
 use cpu::CPU;
+use super::Cartridge;
 
 pub struct NNES {
     cpu: CPU,
     // ppu: PPU,
     // apu: APU,
-    // mapper? cartridge? something?
     bus: Bus,
 }
 
 impl NNES {
-    pub fn new(/* cartridge: Cartridge */) -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
         let cpu = CPU::new();
         // let ppu = PPU::new();
         // let apu = APU::new();
 
-        let bus = Bus::new();
-        // bus.attach(...)
+        let bus = Bus::new(cartridge);
 
         NNES {
-            cpu: cpu,
-            // ppu: ppu,
-            // apu: apu,
-            bus: bus,
+            cpu,
+            // ppu,
+            // apu,
+            bus,
         }
     }
 
