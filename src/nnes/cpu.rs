@@ -114,10 +114,11 @@ impl CPU {
     }
 
     fn fetch(&mut self) {
-        self.ins_ticks = 0;
-
         let data = self.bus.mem_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
+
+        // For implied, immediate, and accumulator reads
+        self.store.addr = self.pc;
 
         if let Some(opcode) = opcodes_list[data as usize].as_ref() {
             self.ins = Some(opcode);
@@ -146,6 +147,10 @@ impl CPU {
     pub fn tick(&mut self) {
         match self.state {
             CPUState::Fetch => {
+                // Reset instruction counter
+                // Currently assumes every instruction starts here, reset for interrupts below
+                self.ins_ticks = 0;
+
                 // Run the cycle
                 self.fetch();
 
@@ -234,5 +239,12 @@ impl CPU {
 
         self.ins_ticks += 1;
         self.total_ticks += 1;
+    }
+
+    pub fn step(&mut self) {
+        self.tick();
+        while self.ins_ticks > 0 {
+            self.tick();
+        }
     }
 }
