@@ -1,5 +1,5 @@
 use super::{Flags, CPU};
-use crate::utils::{hi_byte, lo_byte, bit_7};
+use crate::utils::{add_mod_8, bit_7, hi_byte, lo_byte};
 
 pub struct OpCode {
     pub code: u8,
@@ -54,7 +54,7 @@ lazy_static! {
         Some(OpCode::new(0x0D, "ORA".to_string(), Some(CPU::addr_abs), CPU::ora, 4, false, false, 0)),
         Some(OpCode::new(0x0E, "ASL".to_string(), Some(CPU::addr_abs), CPU::asl, 6, false, false, 0)),
         None,
-        Some(OpCode::new(0x10, "BPL".to_string(), Some(CPU::addr_rel), CPU::bpl, false, true,  0)),
+        Some(OpCode::new(0x10, "BPL".to_string(), None,                CPU::bpl, false, true,  0)),
         Some(OpCode::new(0x11, "ORA".to_string(), Some(CPU::addr_iny), CPU::ora, true,  false, 0)),
         None,
         None,
@@ -86,7 +86,7 @@ lazy_static! {
         Some(OpCode::new(0x2D, "AND".to_string(), Some(CPU::addr_abs), CPU::and, false, false, 0)),
         Some(OpCode::new(0x2E, "ROL".to_string(), Some(CPU::addr_abs), CPU::rol, false, false, 0)),
         None,
-        Some(OpCode::new(0x30, "BMI".to_string(), Some(CPU::addr_rel), CPU::bmi, false, true,  0)),
+        Some(OpCode::new(0x30, "BMI".to_string(), None,                CPU::bmi, false, true,  0)),
         Some(OpCode::new(0x31, "AND".to_string(), Some(CPU::addr_iny), CPU::and, true,  false, 0)),
         None,
         None,
@@ -114,11 +114,11 @@ lazy_static! {
         Some(OpCode::new(0x49, "EOR".to_string(), None,                CPU::eor, false, false, 0)),
         Some(OpCode::new(0x4A, "LSR".to_string(), None,                CPU::lsr, false, false, 0)),
         None,
-        Some(OpCode::new(0x4C, "JMP".to_string(), Some(CPU::addr_abs), CPU::jmp, false, false, 0)),
+        Some(OpCode::new(0x4C, "JMP".to_string(), None,                CPU::jmp, false, false, 0)),
         Some(OpCode::new(0x4D, "EOR".to_string(), Some(CPU::addr_abs), CPU::eor, false, false, 0)),
         Some(OpCode::new(0x4E, "LSR".to_string(), Some(CPU::addr_abs), CPU::lsr, false, false, 0)),
         None,
-        Some(OpCode::new(0x50, "BVC".to_string(), Some(CPU::addr_rel), CPU::bvc, false, true,  0)),
+        Some(OpCode::new(0x50, "BVC".to_string(), None,                CPU::bvc, false, true,  0)),
         Some(OpCode::new(0x51, "EOR".to_string(), Some(CPU::addr_iny), CPU::eor, true,  false, 0)),
         None,
         None,
@@ -146,11 +146,11 @@ lazy_static! {
         Some(OpCode::new(0x69, "ADC".to_string(), None,                CPU::adc, false, false, 0)),
         Some(OpCode::new(0x6A, "ROR".to_string(), None,                CPU::ror, false, false, 0)),
         None,
-        Some(OpCode::new(0x6C, "JMP".to_string(), Some(CPU::addr_ind), CPU::jmp, false, false, 0)), // indirect bug
+        Some(OpCode::new(0x6C, "JMP".to_string(), None,                CPU::jmp, false, false, 0)), // indirect bug
         Some(OpCode::new(0x6D, "ADC".to_string(), Some(CPU::addr_abs), CPU::adc, false, false, 0)),
         Some(OpCode::new(0x6E, "ROR".to_string(), Some(CPU::addr_abs), CPU::ror, false, false, 0)),
         None,
-        Some(OpCode::new(0x70, "BVS".to_string(), Some(CPU::addr_rel), CPU::bvs, false, true,  0)),
+        Some(OpCode::new(0x70, "BVS".to_string(), None,                CPU::bvs, false, true,  0)),
         Some(OpCode::new(0x71, "ADC".to_string(), Some(CPU::addr_iny), CPU::adc, true,  false, 0)),
         None,
         None,
@@ -182,7 +182,7 @@ lazy_static! {
         Some(OpCode::new(0x8D, "STA".to_string(), Some(CPU::addr_abs), CPU::sta, false, false, 0)),
         Some(OpCode::new(0x8E, "STX".to_string(), Some(CPU::addr_abs), CPU::stx, false, false, 0)),
         None,
-        Some(OpCode::new(0x90, "BCC".to_string(), Some(CPU::addr_rel), CPU::bcc, false, true,  0)),
+        Some(OpCode::new(0x90, "BCC".to_string(), None,                CPU::bcc, false, true,  0)),
         Some(OpCode::new(0x91, "STA".to_string(), Some(CPU::addr_iny), CPU::sta, false, false, 1)),
         None,
         None,
@@ -214,7 +214,7 @@ lazy_static! {
         Some(OpCode::new(0xAD, "LDA".to_string(), Some(CPU::addr_abs), CPU::lda, false, false, 0)),
         Some(OpCode::new(0xAE, "LDX".to_string(), Some(CPU::addr_abs), CPU::ldx, false, false, 0)),
         None,
-        Some(OpCode::new(0xB0, "BCS".to_string(), Some(CPU::addr_rel), CPU::bcs, false, true,  0)),
+        Some(OpCode::new(0xB0, "BCS".to_string(), None,                CPU::bcs, false, true,  0)),
         Some(OpCode::new(0xB1, "LDA".to_string(), Some(CPU::addr_iny), CPU::lda, true,  false, 0)),
         None,
         None,
@@ -246,7 +246,7 @@ lazy_static! {
         Some(OpCode::new(0xCD, "CMP".to_string(), Some(CPU::addr_abs), CPU::cmp, false, false, 0)),
         Some(OpCode::new(0xCE, "DEC".to_string(), Some(CPU::addr_abs), CPU::dec, false, false, 0)),
         None,
-        Some(OpCode::new(0xD0, "BNE".to_string(), Some(CPU::addr_rel), CPU::bne, false, true,  0)),
+        Some(OpCode::new(0xD0, "BNE".to_string(), None,                CPU::bne, false, true,  0)),
         Some(OpCode::new(0xD1, "CMP".to_string(), Some(CPU::addr_iny), CPU::cmp, true,  false, 0)),
         None,
         None,
@@ -278,7 +278,7 @@ lazy_static! {
         Some(OpCode::new(0xED, "SBC".to_string(), Some(CPU::addr_abs), CPU::sbc, false, false, 0)),
         Some(OpCode::new(0xEE, "INC".to_string(), Some(CPU::addr_abs), CPU::inc, false, false, 0)),
         None,
-        Some(OpCode::new(0xF0, "BEQ".to_string(), Some(CPU::addr_rel), CPU::beq, false, true,  0)),
+        Some(OpCode::new(0xF0, "BEQ".to_string(), None,                CPU::beq, false, true,  0)),
         Some(OpCode::new(0xF1, "SBC".to_string(), Some(CPU::addr_iny), CPU::sbc, true,  false, 0)),
         None,
         None,
@@ -298,12 +298,6 @@ lazy_static! {
 }
 
 impl CPU {
-    // Helpers
-    fn set_nz(&mut self, data: u8) {
-        self.p.set(Flags::ZERO, data == 0);
-        self.p.set(Flags::NEGATIVE, bit_7(data) != 0);
-    }
-
     // Official addressing functions
     fn addr_zpg(&mut self, subcycle: u8) -> bool {
         match subcycle {
@@ -312,50 +306,107 @@ impl CPU {
                 self.pc = self.pc.wrapping_add(1);
                 true
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     fn addr_zpx(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.addr = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                self.store.addr = add_mod_8(self.store.addr as u8, self.x);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn addr_zpy(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.addr = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                self.store.addr = add_mod_8(self.store.addr, self.y);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn addr_abs(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn addr_abx(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                self.store.data = self.store.lo;
+                self.store.lo = self.store.lo.wrapping_add(self.x);
+                self.page_crossed = self.store.data > self.store.lo;
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                !self.page_crossed
+            }
+            2 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                self.store.addr = self.store.addr.wrapping_add(0x100);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn addr_aby(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                self.store.data = self.store.lo;
+                self.store.lo = self.store.lo.wrapping_add(self.y);
+                self.page_crossed = self.store.data > self.store.lo;
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                !self.page_crossed
+            }
+            2 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                self.store.addr = self.store.addr.wrapping_add(0x100);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
-    }
-
-    fn addr_ind(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
-        true
     }
 
     fn addr_inx(&mut self, subcycle: u8) -> bool {
@@ -380,25 +431,37 @@ impl CPU {
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
                 true
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     fn addr_iny(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.data = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.lo = self.bus.mem_read(self.store.data);
+                false
+            }
+            2 => {
+                self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
+                self.store.data = self.store.lo;
+                self.store.lo = self.store.lo.wrapping_add(self.y);
+                self.page_crossed = self.store.data > self.store.lo;
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                !self.page_crossed
+            }
+            3 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                self.store.addr = self.store.addr.wrapping_add(0x100);
+                true
+            }
         }
         true
     }
-
-    fn addr_rel(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
-        true
-    }
-
-    // Illegal addressing functions
 
     // Official execute functions
     fn brk(&mut self, subcycle: u8) -> bool {
@@ -437,7 +500,7 @@ impl CPU {
                 self.pc = self.store.addr;
                 true
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -449,7 +512,7 @@ impl CPU {
                 self.set_nz(self.a);
                 true
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -467,5 +530,9 @@ impl CPU {
         true
     }
 
-    // Illegal execute functions
+    // Helpers
+    fn set_nz(&mut self, data: u8) {
+        self.p.set(Flags::ZERO, data == 0);
+        self.p.set(Flags::NEGATIVE, bit_7(data) != 0);
+    }
 }

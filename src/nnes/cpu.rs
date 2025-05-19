@@ -117,8 +117,9 @@ impl CPU {
         let data = self.bus.mem_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
 
-        // For implied, immediate, and accumulator reads
-        self.store.addr = self.pc;
+        // For implied, immediate, and accumulator reads that don't have decode_fn
+        // self.store.addr = self.pc;
+        // figure something out
 
         if let Some(opcode) = opcodes_list[data as usize].as_ref() {
             self.ins = Some(opcode);
