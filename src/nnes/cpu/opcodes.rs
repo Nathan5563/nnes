@@ -307,9 +307,13 @@ impl CPU {
     // Official addressing functions
     fn addr_zpg(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.addr = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                true
+            }
+            _ => unreachable!()
         }
-        true
     }
 
     fn addr_zpx(&mut self, subcycle: u8) -> bool {
@@ -362,19 +366,21 @@ impl CPU {
                 false
             }
             1 => {
+                // dummy read
+                let _ = self.bus.mem_read(self.store.data as u16);
                 self.store.data = self.store.data.wrapping_add(self.x);
-                self.store.lo = self.bus.mem_read(self.store.data as u16);
                 false
             }
             2 => {
-                self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.lo = self.bus.mem_read(self.store.data as u16);
                 false
             }
             3 => {
-                self.store.data = self.bus.mem_read(self.store.addr);
+                self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
                 true
             }
+            _ => unreachable!()
         }
     }
 
@@ -438,7 +444,7 @@ impl CPU {
     fn ora(&mut self, subcycle: u8) -> bool {
         match subcycle {
             0 => {
-                // if mode immediate, read next byte here
+                self.store.data = self.bus.mem_read(self.store.addr);
                 self.a |= self.store.data;
                 self.set_nz(self.a);
                 true
