@@ -1,3 +1,7 @@
+pub fn add_mod_8(n: u8, m: u8) -> u8 {
+    n.wrapping_add(m)
+}
+
 pub fn hi_byte(n: u16) -> u8 {
     ((n & 0xFF00) >> 4) as u8
 }
