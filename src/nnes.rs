@@ -4,6 +4,7 @@ use super::Cartridge;
 use cpu::{bus::Bus, CPU};
 
 pub struct NNES {
+    master_clock: u64,
     cpu: CPU,
     // ppu: PPU,
     // apu: APU,
@@ -17,33 +18,29 @@ impl NNES {
         // let apu = APU::new();
 
         NNES {
+            master_clock: 0,
             cpu,
             // ppu,
             // apu,
         }
     }
 
-    pub fn step(&mut self) {
-        // figure out master clock, timings, etc
-        
-        // CPU runs at master clock / 12 Hz
-        // PPU runs at master clock / 4 Hz
-        // APU runs at master clock / 24 Hz
+    pub fn tick(&mut self) {  
+        // // PPU runs at master/4
+        // if self.master_clock % 4 == 0 {
+        //     self.ppu.tick(&mut self.bus);
+        // }
 
-        self.cpu.tick();
-        // self.ppu.tick();
-        // self.ppu.tick();
-        // self.ppu.tick();
-        
-        // self.ppu.tick();
-        self.cpu.tick();
-        // self.ppu.tick();
-        // self.ppu.tick();
+        // CPU runs at master/12
+        if self.master_clock % 12 == 0 {
+            self.cpu.tick();
+        }
 
-        // self.apu.tick();
-    }
+        // // APU runs at master/24
+        // if self.master_clock % 24 == 0 {
+        //     self.apu.tick(&mut self.bus);
+        // }
 
-    pub fn trace(&mut self) {
-        // for test roms
+        self.master_clock = self.master_clock.wrapping_add(1);
     }
 }
