@@ -6,6 +6,7 @@ pub trait BusDevice {
     fn contains(&self, addr: u16) -> bool;
     fn mem_read(&mut self, addr: u16) -> u8;
     fn mem_write(&mut self, addr: u16, data: u8);
+    fn peek(&self, addr: u16) -> u8;
 }
 
 pub struct Bus {
@@ -45,5 +46,15 @@ impl Bus {
             }
         }
         panic!("Unmapped write at address ${addr}"); // get rid of this once finished
+    }
+
+    pub fn peek(&self, addr: u16) -> u8 {
+        for handler in &self.memory_handlers {
+            if handler.contains(addr) {
+                return handler.peek(addr);
+            }
+        }
+        // self.open_bus
+        unimplemented!(); // get rid of this and uncomment the above once finished
     }
 }
