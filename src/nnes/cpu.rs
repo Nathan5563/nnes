@@ -1,12 +1,12 @@
 pub mod bus;
 mod opcodes;
 
-use crate::utils::{add_mod_16, hi_byte, lo_byte};
+use crate::utils::{hi_byte, lo_byte};
 use bus::Bus;
 use opcodes::{opcodes_list, AddressingMode, OpCode};
 
 bitflags! {
-    struct Flags: u8 {
+    pub struct Flags: u8 {
         const CARRY = 0b0000_0001;
         const ZERO = 0b0000_0010;
         const INTERRUPT_DISABLE = 0b0000_0100;
@@ -27,9 +27,13 @@ const RESET_FLAGS: Flags = Flags::UNUSED.union(Flags::INTERRUPT_DISABLE);
 // reset sequence requires 7 cpu cycles
 const RESET_CYCLES: u8 = 7;
 
+// pc is fetched from 0xFFFA/0xFFFB on NMI
 const NMI_VECTOR: u16 = 0xFFFA;
+
+// pc is fetched from 0xFFFE/0xFFFF on IRQ/BRK
 const IRQ_VECTOR: u16 = 0xFFFE;
 
+// stack page is [0x100, 0x200)
 const STACK_OFFSET: u16 = 0x100;
 
 #[derive(Debug, Copy, Clone)]
@@ -71,6 +75,7 @@ pub struct CPUStore {
     pub hi: u8,
     pub addr: u16,
     pub data: u8,
+    pub offset: i8,
     pub vector: u16,
 }
 
@@ -93,6 +98,7 @@ impl CPU {
                 hi: 0,
                 addr: 0,
                 data: 0,
+                offset: 0,
                 vector: 0,
             },
             page_crossed: false,
@@ -125,10 +131,10 @@ impl CPU {
     }
 
     fn fetch(&mut self) {
-        let data = self.bus.mem_read(self.pc);
+        self.store.data = self.bus.mem_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
 
-        if let Some(opcode) = opcodes_list[data as usize].as_ref() {
+        if let Some(opcode) = opcodes_list[self.store.data as usize].as_ref() {
             self.ins = Some(opcode);
         } else {
             unimplemented!();
@@ -250,10 +256,10 @@ impl CPU {
     }
 
     fn trace(&mut self) {
-        let data = self.bus.peek(self.pc);
+        self.store.data = self.bus.peek(self.pc);
 
         let ins;
-        if let Some(opcode) = opcodes_list[data as usize].as_ref() {
+        if let Some(opcode) = opcodes_list[self.store.data as usize].as_ref() {
             ins = Some(opcode);
         } else {
             unimplemented!();
@@ -270,8 +276,8 @@ impl CPU {
         let mode = ins.unwrap().mode;
         let instruction = ins.unwrap().name.as_str();
         let num_bytes = ins.unwrap().bytes;
-        let mut byte1 = 0;
-        let mut byte2 = 0;
+        let mut lo = 0;
+        let mut hi = 0;
         let mut asm = String::from(instruction);
         asm.push(' ');
         match mode {
@@ -283,141 +289,141 @@ impl CPU {
                 asm.push_str("                           ");
             }
             AddressingMode::IMM => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                asm.push_str(format!("#${:02X}", byte1).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("#${:02X}", lo).as_str());
                 asm.push_str("                        ");
             }
             AddressingMode::ZPG => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                asm.push_str(format!("${:02X} ", byte1).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("${:02X} ", lo).as_str());
 
-                let addr = self.bus.peek(byte1 as u16);
+                let addr = self.bus.peek(lo as u16);
                 asm.push_str(format!("= {:02X}", addr).as_str());
                 asm.push_str("                    ");
             }
             AddressingMode::ZPX => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                asm.push_str(format!("${:02X},X ", byte1).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("${:02X},X ", lo).as_str());
 
-                let zp_addr_x = self.x.wrapping_add(byte1);
-                asm.push_str(format!("@ {:02X} ", zp_addr_x).as_str());
+                self.store.addr = self.x.wrapping_add(lo) as u16;
+                asm.push_str(format!("@ {:02X} ", self.store.addr).as_str());
 
-                let data = self.bus.peek(zp_addr_x as u16);
-                asm.push_str(format!("= {:02X}", data).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
                 asm.push_str("             ");
             }
             AddressingMode::ZPY => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                asm.push_str(format!("${:02X},Y ", byte1).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("${:02X},Y ", lo).as_str());
 
-                let zp_addr_y = self.y.wrapping_add(byte1);
-                asm.push_str(format!("@ {:02X} ", zp_addr_y).as_str());
+                self.store.addr = self.y.wrapping_add(lo) as u16;
+                asm.push_str(format!("@ {:02X} ", self.store.addr).as_str());
 
-                let data = self.bus.peek(zp_addr_y as u16);
-                asm.push_str(format!("= {:02X}", data).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
                 asm.push_str("             ");
             }
             AddressingMode::ABS => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                byte2 = self.bus.peek(self.pc.wrapping_add(2));
-                let addr = u16::from_le_bytes([byte1, byte2]);
-                asm.push_str(format!("${:04X} ", addr).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                self.store.addr = u16::from_le_bytes([lo, hi]);
+                asm.push_str(format!("${:04X} ", self.store.addr).as_str());
 
                 if instruction != "JMP" && instruction != "JSR" {
-                    let data = self.bus.peek(addr);
-                    asm.push_str(format!("= {:02X}", data).as_str());
+                    self.store.data = self.bus.peek(self.store.addr);
+                    asm.push_str(format!("= {:02X}", self.store.data).as_str());
                     asm.push_str("                  ");
                 } else {
                     asm.push_str("                      ");
                 }
             }
             AddressingMode::ABX => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                byte2 = self.bus.peek(self.pc.wrapping_add(2));
-                let base_addr = u16::from_le_bytes([byte1, byte2]);
-                asm.push_str(format!("${:04X},X ", base_addr).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                self.store.addr = u16::from_le_bytes([lo, hi]);
+                asm.push_str(format!("${:04X},X ", self.store.addr).as_str());
 
-                let addr_x = add_mod_16(base_addr, self.x as u16);
-                asm.push_str(format!("@ {:04X} ", addr_x).as_str());
+                self.store.addr = self.store.addr.wrapping_add(self.x as u16);
+                asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
 
-                let data = self.bus.peek(addr_x);
-                asm.push_str(format!("= {:02X}", data).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
                 asm.push_str("         ");
             }
             AddressingMode::ABY => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                byte2 = self.bus.peek(self.pc.wrapping_add(2));
-                let base_addr = u16::from_le_bytes([byte1, byte2]);
-                asm.push_str(format!("${:04X},Y ", base_addr).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                self.store.addr = u16::from_le_bytes([lo, hi]);
+                asm.push_str(format!("${:04X},Y ", self.store.addr).as_str());
 
-                let addr_y = add_mod_16(base_addr, self.y as u16);
-                asm.push_str(format!("@ {:04X} ", addr_y).as_str());
+                self.store.addr = self.store.addr.wrapping_add(self.y as u16);
+                asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
 
-                let data = self.bus.peek(addr_y);
-                asm.push_str(format!("= {:02X}", data).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
                 asm.push_str("         ");
             }
             AddressingMode::IND => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                byte2 = self.bus.peek(self.pc.wrapping_add(2));
-                let indirect = u16::from_le_bytes([byte1, byte2]);
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                let indirect = u16::from_le_bytes([lo, hi]);
                 asm.push_str(format!("(${:04X}) ", indirect).as_str());
 
-                let addrl: u8 = self.bus.peek(indirect);
-                let addrh: u8;
+                self.store.lo = self.bus.peek(indirect);
                 if lo_byte(indirect) == 0xff {
-                    addrh = self.bus.peek(hi_byte(indirect) as u16);
+                    self.store.hi = self.bus.peek(hi_byte(indirect) as u16);
                 } else {
-                    addrh = self.bus.peek(indirect + 1);
+                    self.store.hi = self.bus.peek(indirect + 1);
                 }
-                let addr: u16 = u16::from_le_bytes([addrl, addrh]);
-                asm.push_str(format!("= {:04X}", addr).as_str());
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                asm.push_str(format!("= {:04X}", self.store.addr).as_str());
                 asm.push_str("              ");
             }
             AddressingMode::INX => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                asm.push_str(format!("(${:02X},X) ", byte1).as_str());
-                let indirect = self.x.wrapping_add(byte1);
-                asm.push_str(format!("@ {:02X} ", indirect).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("(${:02X},X) ", lo).as_str());
 
-                let addrl = self.bus.peek(indirect as u16);
-                let addrh = self.bus.peek(indirect.wrapping_add(1) as u16);
-                let addr = u16::from_le_bytes([addrl, addrh]);
-                asm.push_str(format!("= {:04X} ", addr).as_str());
+                let indexed = self.x.wrapping_add(lo);
+                asm.push_str(format!("@ {:02X} ", indexed).as_str());
 
-                let data = self.bus.peek(addr);
-                asm.push_str(format!("= {:02X}", data).as_str());
+                self.store.lo = self.bus.peek(indexed as u16);
+                self.store.hi = self.bus.peek(indexed.wrapping_add(1) as u16);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                asm.push_str(format!("= {:04X} ", self.store.addr).as_str());
+
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
                 asm.push_str("    ");
             }
             AddressingMode::INY => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                asm.push_str(format!("(${:02X}),Y ", byte1).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("(${:02X}),Y ", lo).as_str());
 
-                let addrl: u8 = self.bus.peek(byte1 as u16);
-                let addrh: u8 = self.bus.peek(byte1.wrapping_add(1) as u16);
-                let addr: u16 = u16::from_le_bytes([addrl, addrh]);
-                asm.push_str(format!("= {:04X} ", addr).as_str());
+                self.store.lo = self.bus.peek(lo as u16);
+                self.store.hi = self.bus.peek(lo.wrapping_add(1) as u16);
+                let indirect = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                asm.push_str(format!("= {:04X} ", indirect).as_str());
 
-                let indexed: u16 = add_mod_16(addr, self.y as u16);
-                asm.push_str(format!("@ {:04X} ", indexed).as_str());
+                self.store.addr = indirect.wrapping_add(self.y as u16);
+                asm.push_str(format!("@ {:04X} ", indirect).as_str());
 
-                let data: u8 = self.bus.peek(indexed);
-                asm.push_str(format!("= {:02X}", data).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
                 asm.push_str("  ");
             }
             AddressingMode::REL => {
-                byte1 = self.bus.peek(self.pc.wrapping_add(1));
-                let offset: i8 = byte1 as i8;
-                let res: i32 = self.pc as i32 + offset as i32 + 2;
-                asm.push_str(format!("${:04X}", res as u16).as_str());
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                self.store.offset = lo as i8;
+                self.store.addr = (self.pc as i32 + 2 + self.store.offset as i32) as u16;
+                asm.push_str(format!("${:04X}", self.store.addr as u16).as_str());
                 asm.push_str("                       ");
             }
         }
         if num_bytes > 1 {
-            buf.push_str(format!("{:02X}", byte1).as_str());
+            buf.push_str(format!("{:02X}", lo).as_str());
             buf.push(' ');
             if num_bytes > 2 {
-                buf.push_str(format!("{:02X}", byte2).as_str());
+                buf.push_str(format!("{:02X}", hi).as_str());
                 buf.push_str("  ");
             } else {
                 buf.push_str("    ");
