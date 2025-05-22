@@ -1,7 +1,7 @@
 use super::{Flags, CPU};
-use crate::utils::{add_mod_8, bit_7, hi_byte, lo_byte};
+use crate::utils::{add_mod_8, bit_7, bit_0, hi_byte, lo_byte};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum AddressingMode {
     IMP,
     ACC,
@@ -322,8 +322,7 @@ impl CPU {
     fn addr_zpx(&mut self, subcycle: u8) -> bool {
         match subcycle {
             0 => {
-                self.store.addr = self.bus.mem_read(self.pc) as u16;
-                self.pc = self.pc.wrapping_add(1);
+                self.addr_zpg(subcycle);
                 false
             }
             1 => {
@@ -338,8 +337,7 @@ impl CPU {
     fn addr_zpy(&mut self, subcycle: u8) -> bool {
         match subcycle {
             0 => {
-                self.store.addr = self.bus.mem_read(self.pc) as u16;
-                self.pc = self.pc.wrapping_add(1);
+                self.addr_zpg(subcycle);
                 false
             }
             1 => {
@@ -521,16 +519,25 @@ impl CPU {
 
     fn asl(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => {
+                self.shift(true, false, subcycle)
+            }
+            _ => unreachable!()
         }
-        true
     }
 
     fn php(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                self.stack_push(self.p.bits() | Flags::BREAK.bits());
+                true
+            }
+            _ => unreachable!()
         }
-        true
     }
 
     fn bpl(&mut self, subcycle: u8) -> bool {
@@ -898,6 +905,69 @@ impl CPU {
     }
 
     // Helpers
+    fn shift(&mut self, left: bool, with_carry: bool, subcycle: u8) -> bool {
+        let cf = self.p.contains(Flags::CARRY);
+        if self.ins.unwrap().mode == AddressingMode::ACC {
+            let _ = self.get_operand();
+            self.a = self.shift_data(left, with_carry, cf, self.a);
+            self.set_nz(self.a);
+            true
+        } else {
+            match subcycle {
+                0 => {
+                    self.store.data = self.get_operand();
+                    false
+                }
+                1 => {
+                    self.set_result();
+                    self.store.data = self.shift_data(left, with_carry, cf, self.store.data);
+                    false
+                }
+                2 => {
+                    self.set_result();
+                    self.set_nz(self.store.data);
+                    true
+                }
+                _ => unreachable!()
+            }
+        }
+    }
+
+    fn shift_data(&mut self, left: bool, with_carry: bool, cf: bool, mut data: u8) -> u8 {
+        if left {
+            self.p.set(Flags::CARRY, bit_7(data) != 0);
+            data <<= 1;
+            if with_carry && cf {
+                data |= 1;
+            }
+        } else {
+            self.p.set(Flags::CARRY, bit_0(data) != 0);
+            data >>= 1;
+            if with_carry && cf {
+                data |= 128;
+            }
+        }
+        data
+    }
+
+    fn branch(&mut self, jmp: bool, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.offset = self.get_operand() as i8;
+                !jmp
+            }
+            1 => {
+                // branch calculation
+                // page cross condition
+            }
+            2 => {
+                // page cross calculation
+                true
+            }
+            _ => unreachable!()
+        }
+    }
+
     fn get_operand(&mut self) -> u8 {
         match self.ins.unwrap().mode {
             AddressingMode::IMP | AddressingMode::ACC | AddressingMode::IMM => {
@@ -908,7 +978,7 @@ impl CPU {
         }
     }
 
-    fn set_result(&mut self, data: u8) {}
+    fn set_result(&mut self) {}
 
     fn set_nz(&mut self, data: u8) {
         self.p.set(Flags::ZERO, data == 0);
