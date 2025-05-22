@@ -32,7 +32,10 @@ fn main() {
     };
 
     let cartridge = Cartridge::new(&rom);
-    let nnes = NNES::new(cartridge);
-
-    println!("Hello, world!");
+    let nnes = &mut NNES::new(cartridge);
+    nnes.cpu.reset();
+    nnes.cpu.pc = 0xc000;
+    loop {
+        nnes.cpu.step(true);
+    }
 }

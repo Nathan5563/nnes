@@ -4,10 +4,10 @@ use super::Cartridge;
 use cpu::{bus::Bus, CPU};
 
 pub struct NNES {
-    master_clock: u64,
-    cpu: CPU,
-    // ppu: PPU,
-    // apu: APU,
+    pub master_clock: u64,
+    pub cpu: CPU,
+    // pub ppu: PPU,
+    // pub apu: APU,
 }
 
 impl NNES {
