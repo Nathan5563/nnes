@@ -60,7 +60,6 @@ pub struct CPU {
     pub state: CPUState,
     pub ins: Option<&'static OpCode>,
     pub store: CPUStore,
-    pub page_crossed: bool,
     pub software_interrupt: bool,
     pub nmi_pending: bool,
     pub irq_pending: bool,
@@ -101,7 +100,6 @@ impl CPU {
                 offset: 0,
                 vector: 0,
             },
-            page_crossed: false,
             software_interrupt: false,
             nmi_pending: false,
             irq_pending: false,
@@ -170,16 +168,16 @@ impl CPU {
 
                 // Poll for interrupts after the second to last cycle
                 let mut interrupt = false;
-                if self.ins.unwrap().cycles - self.ins_ticks == 2 {
-                    interrupt = self.poll_interrupts();
-                } else if self.ins.unwrap().code == 0x00
-                    && self.ins.unwrap().cycles - self.ins_ticks > 2
-                    && self.nmi_pending
-                {
-                    // NMI hijacking BRK
-                    self.store.vector = NMI_VECTOR;
-                    self.nmi_pending = false;
-                }
+                // if self.ins.unwrap().cycles - self.ins_ticks == 2 {
+                //     interrupt = self.poll_interrupts();
+                // } else if self.ins.unwrap().code == 0x00
+                //     && self.ins.unwrap().cycles - self.ins_ticks > 2
+                //     && self.nmi_pending
+                // {
+                //     // NMI hijacking BRK
+                //     self.store.vector = NMI_VECTOR;
+                //     self.nmi_pending = false;
+                // }
 
                 // Choose next state
                 if interrupt {
@@ -198,9 +196,9 @@ impl CPU {
 
                 // Poll for interrupts in the second to last cycle
                 let mut interrupt = false;
-                if self.ins.unwrap().cycles - self.ins_ticks == 2 {
-                    interrupt = self.poll_interrupts();
-                }
+                // if self.ins.unwrap().cycles - self.ins_ticks == 2 {
+                //     interrupt = self.poll_interrupts();
+                // }
 
                 // Choose next state
                 if interrupt {
@@ -221,16 +219,16 @@ impl CPU {
 
                 // Poll for interrupts in the second to last cycle
                 let mut interrupt = false;
-                if self.ins.unwrap().cycles - self.ins_ticks == 2 {
-                    interrupt = self.poll_interrupts();
-                } else if self.ins.unwrap().code == 0x00
-                    && self.ins.unwrap().cycles - self.ins_ticks > 2
-                    && self.nmi_pending
-                {
-                    // NMI hijacking BRK
-                    self.store.vector = NMI_VECTOR;
-                    self.nmi_pending = false;
-                }
+                // if self.ins.unwrap().cycles - self.ins_ticks == 2 {
+                //     interrupt = self.poll_interrupts();
+                // } else if self.ins.unwrap().code == 0x00
+                //     && self.ins.unwrap().cycles - self.ins_ticks > 2
+                //     && self.nmi_pending
+                // {
+                //     // NMI hijacking BRK
+                //     self.store.vector = NMI_VECTOR;
+                //     self.nmi_pending = false;
+                // }
 
                 // Choose next state
                 if interrupt {

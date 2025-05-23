@@ -1,5 +1,5 @@
 use super::{Flags, CPU};
-use crate::utils::{add_mod_8, bit_7, bit_0, hi_byte, lo_byte};
+use crate::utils::{add_mod_8, bit_0, bit_6, bit_7, hi_byte, lo_byte};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum AddressingMode {
@@ -84,7 +84,7 @@ lazy_static! {
         Some(OpCode::new(0x1D, "ORA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::ora, 4, 3)),
         Some(OpCode::new(0x1E, "ASL".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::asl, 7, 3)),
         None,
-        Some(OpCode::new(0x20, "JSR".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::jsr, 6, 3)),
+        Some(OpCode::new(0x20, "JSR".to_string(), AddressingMode::ABS, None,                CPU::jsr, 6, 3)),
         Some(OpCode::new(0x21, "AND".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::and, 6, 2)),
         None,
         None,
@@ -378,9 +378,8 @@ impl CPU {
                 self.pc = self.pc.wrapping_add(1);
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.x);
-                self.page_crossed = self.store.data > self.store.lo;
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                !self.page_crossed
+                self.store.data <= self.store.lo
             }
             2 => {
                 let _ = self.bus.mem_read(self.store.addr);
@@ -403,9 +402,8 @@ impl CPU {
                 self.pc = self.pc.wrapping_add(1);
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
-                self.page_crossed = self.store.data > self.store.lo;
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                !self.page_crossed
+                self.store.data <= self.store.lo
             }
             2 => {
                 let _ = self.bus.mem_read(self.store.addr);
@@ -457,9 +455,8 @@ impl CPU {
                 self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
-                self.page_crossed = self.store.data > self.store.lo;
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                !self.page_crossed
+                self.store.data <= self.store.lo
             }
             3 => {
                 let _ = self.bus.mem_read(self.store.addr);
@@ -519,10 +516,8 @@ impl CPU {
 
     fn asl(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            0 | 1 | 2 => {
-                self.shift(true, false, subcycle)
-            }
-            _ => unreachable!()
+            0 | 1 | 2 => self.shift(true, false, subcycle),
+            _ => unreachable!(),
         }
     }
 
@@ -536,50 +531,72 @@ impl CPU {
                 self.stack_push(self.p.bits() | Flags::BREAK.bits());
                 true
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     fn bpl(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::NEGATIVE), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn clc(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn clc(&mut self, _subcycle: u8) -> bool {
+        self.p.remove(Flags::CARRY);
         true
     }
 
     fn jsr(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                let _ = self.stack_pop();
+                self.sp = self.sp.wrapping_sub(1);
+                false
+            }
+            2 => {
+                self.stack_push(hi_byte(self.pc));
+                false
+            }
+            3 => {
+                self.stack_push(lo_byte(self.pc));
+                false
+            }
+            4 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                true
+            }
+            _ => unreachable!(),
         }
+    }
+
+    fn and(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a &= self.store.data;
+        self.set_nz(self.a);
         true
     }
 
-    fn and(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
-        true
-    }
-
-    fn bit(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn bit(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        let res = self.a & self.store.data;
+        self.p.set(Flags::ZERO, res == 0);
+        self.p.set(Flags::OVERFLOW, bit_6(self.store.data) == 1);
+        self.p.set(Flags::NEGATIVE, bit_7(self.store.data) == 1);
         true
     }
 
     fn rol(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.shift(true, true, subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
     fn plp(&mut self, subcycle: u8) -> bool {
@@ -591,15 +608,13 @@ impl CPU {
 
     fn bmi(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::NEGATIVE), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn sec(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn sec(&mut self, _subcycle: u8) -> bool {
+        self.p.insert(Flags::CARRY);
         true
     }
 
@@ -619,9 +634,9 @@ impl CPU {
 
     fn lsr(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.shift(false, false, subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
     fn pha(&mut self, subcycle: u8) -> bool {
@@ -633,22 +648,48 @@ impl CPU {
 
     fn jmp(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                if self.ins.unwrap().mode == AddressingMode::ABS {
+                    self.pc = self.store.addr;
+                    true
+                } else {
+                    self.pc = self.pc.wrapping_add(1);
+                    false
+                }
+            }
+            2 => {
+                self.store.lo = self.bus.mem_read(self.store.addr);
+                false
+            }
+            3 => {
+                self.store.addr = u16::from_le_bytes([
+                    lo_byte(self.store.addr.wrapping_add(1)),
+                    hi_byte(self.store.addr),
+                ]);
+                self.store.hi = self.bus.mem_read(self.store.addr);
+                self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn bvc(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::OVERFLOW), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn cli(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn cli(&mut self, _subcycle: u8) -> bool {
+        self.p.remove(Flags::INTERRUPT_DISABLE);
         true
     }
 
@@ -668,9 +709,9 @@ impl CPU {
 
     fn ror(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.shift(false, true, subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
     fn pla(&mut self, subcycle: u8) -> bool {
@@ -682,15 +723,13 @@ impl CPU {
 
     fn bvs(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::OVERFLOW), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn sei(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn sei(&mut self, _subcycle: u8) -> bool {
+        self.p.insert(Flags::INTERRUPT_DISABLE);
         true
     }
 
@@ -731,9 +770,9 @@ impl CPU {
 
     fn bcc(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::CARRY), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
     fn tya(&mut self, subcycle: u8) -> bool {
@@ -787,15 +826,13 @@ impl CPU {
 
     fn bcs(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::CARRY), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn clv(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn clv(&mut self, _subcycle: u8) -> bool {
+        self.p.remove(Flags::OVERFLOW);
         true
     }
 
@@ -843,15 +880,13 @@ impl CPU {
 
     fn bne(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::ZERO), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn cld(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn cld(&mut self, _subcycle: u8) -> bool {
+        self.p.remove(Flags::DECIMAL_MODE);
         true
     }
 
@@ -883,24 +918,19 @@ impl CPU {
         true
     }
 
-    fn nop(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn nop(&mut self, _subcycle: u8) -> bool {
         true
     }
 
     fn beq(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::ZERO), subcycle),
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn sed(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn sed(&mut self, _subcycle: u8) -> bool {
+        self.p.insert(Flags::DECIMAL_MODE);
         true
     }
 
@@ -928,7 +958,7 @@ impl CPU {
                     self.set_nz(self.store.data);
                     true
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
     }
@@ -957,20 +987,26 @@ impl CPU {
                 !jmp
             }
             1 => {
-                // branch calculation
-                // page cross condition
+                let _ = self.bus.mem_read(self.pc);
+                self.store.addr = self.pc.wrapping_add(self.store.offset as i16 as u16);
+                self.pc = u16::from_le_bytes([lo_byte(self.store.addr), hi_byte(self.pc)]);
+                hi_byte(self.pc) == hi_byte(self.store.addr)
             }
             2 => {
-                // page cross calculation
+                let _ = self.bus.mem_read(self.pc);
+                self.pc = u16::from_le_bytes([lo_byte(self.store.addr), hi_byte(self.store.addr)]);
                 true
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     fn get_operand(&mut self) -> u8 {
         match self.ins.unwrap().mode {
-            AddressingMode::IMP | AddressingMode::ACC | AddressingMode::IMM => {
+            AddressingMode::IMP
+            | AddressingMode::ACC
+            | AddressingMode::IMM
+            | AddressingMode::REL => {
                 self.pc = self.pc.wrapping_add(1);
                 self.bus.mem_read(self.pc.wrapping_sub(1))
             }
