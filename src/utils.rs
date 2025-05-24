@@ -7,7 +7,7 @@ pub fn add_mod_16(n: u16, m: u16) -> u16 {
 }
 
 pub fn hi_byte(n: u16) -> u8 {
-    ((n & 0xFF00) >> 4) as u8
+    (n >> 8) as u8
 }
 
 pub fn lo_byte(n: u16) -> u8 {
@@ -15,7 +15,7 @@ pub fn lo_byte(n: u16) -> u8 {
 }
 
 pub fn hi_nibble(n: u8) -> u8 {
-    (n & 0xF0) >> 2
+    n >> 4
 }
 
 pub fn lo_nibble(n: u8) -> u8 {
