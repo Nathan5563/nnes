@@ -48,12 +48,34 @@ impl BusDevice for PPU_Regs {
 
 // APU IO Registers
 pub struct APU_Regs {
-    apu_regs: [u8; 0x0018],
+    apu_regs: [u8; 0x0020],
 }
 
 impl BusDevice for APU_Regs {
     fn contains(&self, addr: u16) -> bool {
-        (0x4000..0x4018).contains(&addr)
+        (0x4000..0x4020).contains(&addr)
+    }
+
+    fn mem_read(&mut self, addr: u16) -> u8 {
+        unimplemented!()
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        unimplemented!()
+    }
+
+    fn peek(&self, addr: u16) -> u8 {
+        unimplemented!()
+    }
+}
+
+pub struct Expansion_ROM {
+    expansion_rom: [u8; 0x1FE0],
+}
+
+impl BusDevice for Expansion_ROM {
+    fn contains(&self, addr: u16) -> bool {
+        (0x4020..0x6000).contains(&addr)
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
@@ -100,13 +122,13 @@ pub struct PRG_ROM {
 
 impl BusDevice for PRG_ROM {
     fn contains(&self, addr: u16) -> bool {
-        (0x8000..=0xffff).contains(&addr)
+        (0x8000..=0xFFFF).contains(&addr)
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
         match self.num_banks {
             1 => {
-                self.prg_rom[(addr as usize - 0x8000) & 0x1FFF]
+                self.prg_rom[(addr as usize - 0x8000) & 0x3FFF]
             }
             2 => {
                 self.prg_rom[addr as usize - 0x8000]
@@ -122,7 +144,7 @@ impl BusDevice for PRG_ROM {
     fn peek(&self, addr: u16) -> u8 {
         match self.num_banks {
             1 => {
-                self.prg_rom[(addr as usize - 0x8000) & 0x1FFF]
+                self.prg_rom[(addr as usize - 0x8000) & 0x3FFF]
             }
             2 => {
                 self.prg_rom[addr as usize - 0x8000]
@@ -139,7 +161,7 @@ pub fn memory_map(memory_handlers: &mut Vec<Box<dyn BusDevice>>, cartridge: Cart
         ppu_regs: [0; 0x0008],
     }));
     memory_handlers.push(Box::new(APU_Regs {
-        apu_regs: [0; 0x0018],
+        apu_regs: [0; 0x0020],
     }));
     if cartridge.has_trainer || cartridge.has_sram {
         memory_handlers.push(Box::new(SRAM {
