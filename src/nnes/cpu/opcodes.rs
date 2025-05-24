@@ -422,7 +422,6 @@ impl CPU {
                 false
             }
             1 => {
-                // dummy read
                 let _ = self.bus.mem_read(self.store.data as u16);
                 self.store.data = self.store.data.wrapping_add(self.x);
                 false
@@ -472,14 +471,17 @@ impl CPU {
         match subcycle {
             0 => {
                 let _ = self.get_operand();
+                self.sp = self.sp.wrapping_sub(1);
                 false
             }
             1 => {
                 self.stack_push(hi_byte(self.pc));
+                self.sp = self.sp.wrapping_sub(1);
                 false
             }
             2 => {
                 self.stack_push(lo_byte(self.pc));
+                self.sp = self.sp.wrapping_sub(1);
                 false
             }
             3 => {
@@ -543,6 +545,7 @@ impl CPU {
     }
 
     fn clc(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         self.p.remove(Flags::CARRY);
         true
     }
@@ -555,8 +558,7 @@ impl CPU {
                 false
             }
             1 => {
-                let _ = self.stack_pop();
-                self.sp = self.sp.wrapping_sub(1);
+                let _ = self.stack_peek();
                 false
             }
             2 => {
@@ -587,8 +589,8 @@ impl CPU {
         self.store.data = self.get_operand();
         let res = self.a & self.store.data;
         self.p.set(Flags::ZERO, res == 0);
-        self.p.set(Flags::OVERFLOW, bit_6(self.store.data) == 1);
-        self.p.set(Flags::NEGATIVE, bit_7(self.store.data) == 1);
+        self.p.set(Flags::OVERFLOW, bit_6(self.store.data) != 0);
+        self.p.set(Flags::NEGATIVE, bit_7(self.store.data) != 0);
         true
     }
 
@@ -601,9 +603,30 @@ impl CPU {
 
     fn plp(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                let flags = Flags::from_bits_truncate(self.stack_pop());
+                self.p.set(Flags::CARRY, flags.contains(Flags::CARRY));
+                self.p.set(Flags::ZERO, flags.contains(Flags::ZERO));
+                self.p.set(
+                    Flags::INTERRUPT_DISABLE,
+                    flags.contains(Flags::INTERRUPT_DISABLE),
+                );
+                self.p
+                    .set(Flags::DECIMAL_MODE, flags.contains(Flags::DECIMAL_MODE));
+                self.p.set(Flags::OVERFLOW, flags.contains(Flags::OVERFLOW));
+                self.p.set(Flags::NEGATIVE, flags.contains(Flags::NEGATIVE));
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn bmi(&mut self, subcycle: u8) -> bool {
@@ -614,21 +637,51 @@ impl CPU {
     }
 
     fn sec(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         self.p.insert(Flags::CARRY);
         true
     }
 
     fn rti(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                let flags = Flags::from_bits_truncate(self.stack_pop());
+                self.p.set(Flags::CARRY, flags.contains(Flags::CARRY));
+                self.p.set(Flags::ZERO, flags.contains(Flags::ZERO));
+                self.p.set(
+                    Flags::INTERRUPT_DISABLE,
+                    flags.contains(Flags::INTERRUPT_DISABLE),
+                );
+                self.p
+                    .set(Flags::DECIMAL_MODE, flags.contains(Flags::DECIMAL_MODE));
+                self.p.set(Flags::OVERFLOW, flags.contains(Flags::OVERFLOW));
+                self.p.set(Flags::NEGATIVE, flags.contains(Flags::NEGATIVE));
+                false
+            }
+            3 => {
+                self.pc = u16::from_le_bytes([self.stack_pop(), hi_byte(self.pc)]);
+                false
+            }
+            4 => {
+                self.pc = u16::from_le_bytes([lo_byte(self.pc), self.stack_pop()]);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn eor(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn eor(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a ^= self.store.data;
+        self.set_nz(self.a);
         true
     }
 
@@ -641,9 +694,16 @@ impl CPU {
 
     fn pha(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                self.stack_push(self.a);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn jmp(&mut self, subcycle: u8) -> bool {
@@ -689,21 +749,43 @@ impl CPU {
     }
 
     fn cli(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         self.p.remove(Flags::INTERRUPT_DISABLE);
         true
     }
 
     fn rts(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                self.store.lo = self.stack_pop();
+                false
+            }
+            3 => {
+                self.store.hi = self.stack_pop();
+                self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                false
+            }
+            4 => {
+                let _ = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn adc(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn adc(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a = self.add(self.a, self.store.data, false);
+        self.set_nz(self.a);
         true
     }
 
@@ -716,9 +798,21 @@ impl CPU {
 
     fn pla(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                self.a = self.stack_pop();
+                self.set_nz(self.a);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
     fn bvs(&mut self, subcycle: u8) -> bool {
@@ -729,42 +823,37 @@ impl CPU {
     }
 
     fn sei(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         self.p.insert(Flags::INTERRUPT_DISABLE);
         true
     }
 
-    fn sta(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn sta(&mut self, _subcycle: u8) -> bool {
+        self.bus.mem_write(self.store.addr, self.a);
         true
     }
 
-    fn sty(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn sty(&mut self, _subcycle: u8) -> bool {
+        self.bus.mem_write(self.store.addr, self.y);
         true
     }
 
-    fn stx(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn stx(&mut self, _subcycle: u8) -> bool {
+        self.bus.mem_write(self.store.addr, self.x);
         true
     }
 
-    fn dey(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn dey(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.y = self.y.wrapping_sub(1);
+        self.set_nz(self.y);
         true
     }
 
-    fn txa(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn txa(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.a = self.x;
+        self.set_nz(self.a);
         true
     }
 
@@ -775,52 +864,51 @@ impl CPU {
         }
     }
 
-    fn tya(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn tya(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.a = self.y;
+        self.set_nz(self.a);
         true
     }
 
-    fn txs(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn txs(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.sp = self.x;
         true
     }
 
-    fn ldy(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn ldy(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.y = self.store.data;
+        self.set_nz(self.y);
         true
     }
 
-    fn lda(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn lda(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a = self.store.data;
+        self.set_nz(self.a);
         true
     }
 
-    fn ldx(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn ldx(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.x = self.store.data;
+        self.set_nz(self.x);
         true
     }
 
-    fn tay(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn tay(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.y = self.a;
+        self.set_nz(self.y);
         true
     }
 
-    fn tax(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn tax(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.a;
+        self.set_nz(self.x);
         true
     }
 
@@ -832,49 +920,61 @@ impl CPU {
     }
 
     fn clv(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         self.p.remove(Flags::OVERFLOW);
         true
     }
 
-    fn tsx(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn tsx(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.sp;
+        self.set_nz(self.x);
         true
     }
 
-    fn cpy(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn cpy(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.compare(self.y, self.store.data);
         true
     }
 
-    fn cmp(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn cmp(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.compare(self.a, self.store.data);
         true
     }
 
     fn dec(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.data = self.get_operand();
+                false
+            }
+            1 => {
+                self.set_result();
+                self.store.data = self.store.data.wrapping_sub(1);
+                false
+            }
+            2 => {
+                self.set_result();
+                self.set_nz(self.store.data);
+                true
+            }
+            _ => unreachable!(),
         }
+    }
+
+    fn iny(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.y = self.y.wrapping_add(1);
+        self.set_nz(self.y);
         true
     }
 
-    fn iny(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
-        true
-    }
-
-    fn dex(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn dex(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.x.wrapping_sub(1);
+        self.set_nz(self.x);
         true
     }
 
@@ -886,39 +986,53 @@ impl CPU {
     }
 
     fn cld(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         self.p.remove(Flags::DECIMAL_MODE);
         true
     }
 
-    fn cpx(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn cpx(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.compare(self.x, self.store.data);
         true
     }
 
-    fn sbc(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn sbc(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a = self.add(self.a, self.store.data, true);
+        self.set_nz(self.a);
         true
     }
 
     fn inc(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            _ => {}
+            0 => {
+                self.store.data = self.get_operand();
+                false
+            }
+            1 => {
+                self.set_result();
+                self.store.data = self.store.data.wrapping_add(1);
+                false
+            }
+            2 => {
+                self.set_result();
+                self.set_nz(self.store.data);
+                true
+            }
+            _ => unreachable!(),
         }
-        true
     }
 
-    fn inx(&mut self, subcycle: u8) -> bool {
-        match subcycle {
-            _ => {}
-        }
+    fn inx(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.x.wrapping_add(1);
+        self.set_nz(self.x);
         true
     }
 
     fn nop(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         true
     }
 
@@ -930,11 +1044,43 @@ impl CPU {
     }
 
     fn sed(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
         self.p.insert(Flags::DECIMAL_MODE);
         true
     }
 
     // Helpers
+    fn add(&mut self, n: u8, mut m: u8, subtract: bool) -> u8 {
+        let cbit = self.p.contains(Flags::CARRY) as u8;
+
+        let mut res;
+        if subtract {
+            m = !m;
+            res = n as u16 + m as u16 + cbit as u16;
+            if (res as i8) < 0 {
+                self.p.remove(Flags::CARRY);
+            } else {
+                self.p.insert(Flags::CARRY);
+            }
+        } else {
+            res = n as u16 + m as u16 + cbit as u16;
+            if res > 0xff {
+                self.p.insert(Flags::CARRY);
+            } else {
+                self.p.remove(Flags::CARRY);
+            }
+        }
+
+        res &= 0xFF;
+        if bit_7((n ^ res as u8) & (m ^ res as u8)) != 0 {
+            self.p.insert(Flags::OVERFLOW);
+        } else {
+            self.p.remove(Flags::OVERFLOW);
+        }
+
+        res as u8
+    }
+
     fn shift(&mut self, left: bool, with_carry: bool, subcycle: u8) -> bool {
         let cf = self.p.contains(Flags::CARRY);
         if self.ins.unwrap().mode == AddressingMode::ACC {
@@ -980,6 +1126,11 @@ impl CPU {
         data
     }
 
+    fn compare(&mut self, n: u8, m: u8) {
+        self.set_nz(n.wrapping_sub(m));
+        self.p.set(Flags::CARRY, n >= m);
+    }
+
     fn branch(&mut self, jmp: bool, subcycle: u8) -> bool {
         match subcycle {
             0 => {
@@ -994,7 +1145,7 @@ impl CPU {
             }
             2 => {
                 let _ = self.bus.mem_read(self.pc);
-                self.pc = u16::from_le_bytes([lo_byte(self.store.addr), hi_byte(self.store.addr)]);
+                self.pc = self.store.addr;
                 true
             }
             _ => unreachable!(),
@@ -1003,10 +1154,8 @@ impl CPU {
 
     fn get_operand(&mut self) -> u8 {
         match self.ins.unwrap().mode {
-            AddressingMode::IMP
-            | AddressingMode::ACC
-            | AddressingMode::IMM
-            | AddressingMode::REL => {
+            AddressingMode::IMP | AddressingMode::ACC => self.bus.mem_read(self.pc.wrapping_add(1)),
+            AddressingMode::IMM | AddressingMode::REL => {
                 self.pc = self.pc.wrapping_add(1);
                 self.bus.mem_read(self.pc.wrapping_sub(1))
             }
@@ -1014,7 +1163,14 @@ impl CPU {
         }
     }
 
-    fn set_result(&mut self) {}
+    fn set_result(&mut self) {
+        match self.ins.unwrap().mode {
+            AddressingMode::ACC => {
+                self.a = self.store.data;
+            }
+            _ => self.bus.mem_write(self.store.addr, self.store.data),
+        }
+    }
 
     fn set_nz(&mut self, data: u8) {
         self.p.set(Flags::ZERO, data == 0);
