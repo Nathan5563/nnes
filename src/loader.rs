@@ -1,4 +1,5 @@
 use std::{fs, iter};
+use crate::utils::hi_nibble;
 
 const NES_MAGIC: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 
@@ -24,9 +25,9 @@ pub fn validate(arg: &String) -> Result<Vec<u8>, String> {
     }
 
     // Not mapper 0
-    let lo = (rom[6] & 0xf0) >> 4;
-    let hi = rom[7] & 0xf0;
-    let mapper = hi | lo;
+    let lo = hi_nibble(rom[6]);
+    let hi = hi_nibble(rom[7]);
+    let mapper = u16::from_le_bytes([lo, hi]);
     if mapper != 0 {
         return Err("error: unsupported mapper".to_string());
     }
