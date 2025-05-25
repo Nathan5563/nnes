@@ -34,7 +34,7 @@ fn main() {
     let cartridge = Cartridge::new(&rom);
     let nnes = &mut NNES::new(cartridge);
     nnes.cpu.reset();
-    nnes.cpu.pc = 0xc000;
+    nnes.cpu.set_pc(0xc000);
     loop {
         nnes.cpu.step(true);
     }

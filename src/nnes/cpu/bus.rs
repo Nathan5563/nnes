@@ -34,9 +34,8 @@ impl Bus {
             }
         }
         // self.open_bus
-        // unimplemented!(); // get rid of this and uncomment the above once finished
+        unimplemented!(); // get rid of this and uncomment the above once finished
         // handle dummys somehow (new func or simple param to indicate)
-        0
     }
 
     pub fn mem_write(&mut self, addr: u16, data: u8) {
@@ -57,8 +56,7 @@ impl Bus {
             }
         }
         // self.open_bus
-        // unimplemented!(); // get rid of this and uncomment the above once finished
+        unimplemented!(); // get rid of this and uncomment the above once finished
         // handle dummys somehow (new func or simple param to indicate)
-        0
     }
 }
