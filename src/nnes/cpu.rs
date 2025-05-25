@@ -6,7 +6,7 @@ use bus::Bus;
 use opcodes::{opcodes_list, AddressingMode, OpCode};
 
 bitflags! {
-    pub struct Flags: u8 {
+    struct Flags: u8 {
         const CARRY = 0b0000_0001;
         const ZERO = 0b0000_0010;
         const INTERRUPT_DISABLE = 0b0000_0100;
@@ -22,7 +22,7 @@ bitflags! {
 const RESET_VECTOR: u16 = 0;
 // on reset, three pushes occur changing this from 0 to 0xfd
 const RESET_SP: u8 = 0xfd;
-// unused flag is always on, interrupt disable is turned on for reset sequence
+// unused flag always starts on, interrupt disable is turned on for reset sequence
 const RESET_FLAGS: Flags = Flags::UNUSED.union(Flags::INTERRUPT_DISABLE);
 // reset sequence requires 7 cpu cycles
 const RESET_CYCLES: u8 = 7;
@@ -36,7 +36,7 @@ const IRQ_VECTOR: u16 = 0xFFFE;
 // stack page is [0x100, 0x200)
 const STACK_OFFSET: u16 = 0x100;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CPUState {
     Fetch,
     Decode { subcycle: u8 },
@@ -46,36 +46,39 @@ pub enum CPUState {
 
 pub struct CPU {
     // Architectural state
-    pub pc: u16,
-    pub sp: u8,
-    pub a: u8,
-    pub x: u8,
-    pub y: u8,
-    pub p: Flags,
+    pc: u16,
+    sp: u8,
+    a: u8,
+    x: u8,
+    y: u8,
+    p: Flags,
 
     // Memory bus
-    pub bus: Bus,
+    bus: Bus,
 
-    // State machine metadata
-    pub state: CPUState,
-    pub ins: Option<&'static OpCode>,
-    pub store: CPUStore,
-    pub software_interrupt: bool,
-    pub nmi_pending: bool,
-    pub irq_pending: bool,
+    // FSM metadata
+    state: CPUState,
+    ins: Option<&'static OpCode>,
+    store: CPUStore,
+    software_interrupt: bool,
+    nmi_pending: bool,
+    irq_pending: bool,
+    servicing_interrupt: bool,
+    hijacked: bool,
+    page_crossed: bool,
 
-    // Debugging tooling
-    pub ins_ticks: i8,
-    pub total_ticks: u64,
+    // Debugging tools
+    ins_ticks: i8,
+    total_ticks: u64,
 }
 
-pub struct CPUStore {
-    pub lo: u8,
-    pub hi: u8,
-    pub addr: u16,
-    pub data: u8,
-    pub offset: i8,
-    pub vector: u16,
+struct CPUStore {
+    lo: u8,
+    hi: u8,
+    addr: u16,
+    data: u8,
+    offset: i8,
+    vector: u16,
 }
 
 impl CPU {
@@ -103,13 +106,21 @@ impl CPU {
             software_interrupt: false,
             nmi_pending: false,
             irq_pending: false,
+            servicing_interrupt: true,
+            hijacked: false,
+            page_crossed: false,
 
             ins_ticks: 0,
             total_ticks: 0,
         }
     }
 
+    pub fn set_pc(&mut self, addr: u16) {
+        self.pc = addr;
+    }
+
     pub fn reset(&mut self) {
+        self.servicing_interrupt = false;
         self.store.lo = self.bus.mem_read(RESET_VECTOR);
         self.store.hi = self.bus.mem_read(RESET_VECTOR + 1);
         self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);
@@ -118,17 +129,17 @@ impl CPU {
         self.total_ticks = RESET_CYCLES as u64;
     }
 
-    pub fn stack_push(&mut self, data: u8) {
+    fn stack_push(&mut self, data: u8) {
         self.bus.mem_write(STACK_OFFSET + self.sp as u16, data);
         self.sp = self.sp.wrapping_sub(1);
     }
 
-    pub fn stack_pop(&mut self) -> u8 {
+    fn stack_pop(&mut self) -> u8 {
         self.sp = self.sp.wrapping_add(1);
         self.bus.mem_read(STACK_OFFSET + self.sp as u16)
     }
 
-    pub fn stack_peek(&mut self) -> u8 {
+    fn stack_peek(&mut self) -> u8 {
         self.bus.mem_read(STACK_OFFSET + self.sp as u16)
     }
 
@@ -148,60 +159,61 @@ impl CPU {
         }
     }
 
-    fn poll_interrupts(&mut self) -> bool {
-        if self.nmi_pending {
-            self.store.vector = NMI_VECTOR;
-            true
-        } else if self.irq_pending && !self.p.intersects(Flags::INTERRUPT_DISABLE) {
-            self.store.vector = IRQ_VECTOR;
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn tick(&mut self) {
         match self.state {
             CPUState::Fetch => {
-                // Run the cycle
                 self.fetch();
+                self.set_next_state(true);
+            }
+            CPUState::Decode { subcycle } => {
+                let done = (self.ins.unwrap().decode_fn.unwrap())(self, subcycle);
+                self.set_next_state(done);
+            }
+            CPUState::Execute { subcycle } => {
+                let done = (self.ins.unwrap().execute_fn)(self, subcycle);
+                self.set_next_state(done);
+                if done {
+                    self.ins_ticks = -1;
+                    if self.state == CPUState::Interrupt {
+                        self.ins = opcodes_list[0x00].as_ref();
+                    };
+                };
+            }
+            CPUState::Interrupt => {
+                if self.nmi_pending {
+                    self.store.vector = NMI_VECTOR;
+                } else {
+                    self.store.vector = IRQ_VECTOR;
+                }
+                let _ = self.bus.mem_read(self.pc);
+                self.set_next_state(true);
+            }
+        }
 
-                // Poll for interrupts after the second to last cycle
-                let mut interrupt = false;
-                // if self.ins.unwrap().cycles - self.ins_ticks == 2 {
-                //     interrupt = self.poll_interrupts();
-                // } else if self.ins.unwrap().code == 0x00
-                //     && self.ins.unwrap().cycles - self.ins_ticks > 2
-                //     && self.nmi_pending
-                // {
-                //     // NMI hijacking BRK
-                //     self.store.vector = NMI_VECTOR;
-                //     self.nmi_pending = false;
-                // }
+        self.ins_ticks += 1;
+        self.total_ticks += 1;
+    }
 
-                // Choose next state
-                self.state = if interrupt {
-                    CPUState::Interrupt
-                } else if self.ins.unwrap().decode_fn.is_none() {
+    // FSM Helpers
+    fn set_next_state(&mut self, finished_subcycles: bool) {
+        // Interrupts being serviced do not poll for other interrupts
+        if !self.servicing_interrupt {
+            self.poll_interrupts();
+        };
+        if self.ins.unwrap().code == 0x00 {
+            self.poll_hijacks();
+        }
+
+        match self.state {
+            CPUState::Fetch => {
+                self.state = if self.ins.unwrap().decode_fn.is_none() {
                     CPUState::Execute { subcycle: 0 }
                 } else {
                     CPUState::Decode { subcycle: 0 }
                 };
             }
             CPUState::Decode { subcycle } => {
-                // Run the cycle
-                let done = (self.ins.unwrap().decode_fn.unwrap())(self, subcycle);
-
-                // Poll for interrupts in the second to last cycle
-                let mut interrupt = false;
-                // if self.ins.unwrap().cycles - self.ins_ticks == 2 {
-                //     interrupt = self.poll_interrupts();
-                // }
-
-                // Choose next state
-                self.state = if interrupt {
-                    CPUState::Interrupt
-                } else if done {
+                self.state = if finished_subcycles {
                     CPUState::Execute { subcycle: 0 }
                 } else {
                     CPUState::Decode {
@@ -210,53 +222,69 @@ impl CPU {
                 }
             }
             CPUState::Execute { subcycle } => {
-                // Run the cycle
-                let done = (self.ins.unwrap().execute_fn)(self, subcycle);
-
-                // Poll for interrupts in the second to last cycle
-                let mut interrupt = false;
-                // if self.ins.unwrap().cycles - self.ins_ticks == 2 {
-                //     interrupt = self.poll_interrupts();
-                // } else if self.ins.unwrap().code == 0x00
-                //     && self.ins.unwrap().cycles - self.ins_ticks > 2
-                //     && self.nmi_pending
-                // {
-                //     // NMI hijacking BRK
-                //     self.store.vector = NMI_VECTOR;
-                //     self.nmi_pending = false;
-                // }
-
-                // Choose next state
-                self.state = if interrupt {
+                self.state = if finished_subcycles && self.servicing_interrupt {
                     CPUState::Interrupt
-                } else if done {
+                } else if finished_subcycles {
                     CPUState::Fetch
                 } else {
                     CPUState::Execute {
                         subcycle: subcycle + 1,
                     }
                 };
-
-                if done { self.ins_ticks = -1 };
             }
             CPUState::Interrupt => {
-                // turn off appropriate signals
-                // note that an NMI can hijack an IRQ, and if so, the irq_pending should remain true
+                self.state = CPUState::Execute { subcycle: 0 };
             }
         }
+    }
 
-        self.ins_ticks += 1;
-        self.total_ticks += 1;
+    fn poll_interrupts(&mut self) {
+        // Poll for interrupts if the second to last cycle has ended
+        if self.ins.unwrap().cycles - self.ins_ticks as u8 == 2 {
+            self.servicing_interrupt = if self.nmi_pending {
+                true
+            } else if self.irq_pending && !self.p.intersects(Flags::INTERRUPT_DISABLE) {
+                true
+            } else {
+                false
+            };
+        }
+    }
+
+    fn poll_hijacks(&mut self) {
+        if self.ins_ticks <= 3 {
+            if self.nmi_pending {
+                // NMI hijacking IRQ/BRK
+                self.hijacked = true;
+                self.store.vector = NMI_VECTOR;
+            } else if self.irq_pending {
+                // IRQ hijacking BRK
+                self.hijacked = true;
+                self.store.vector = IRQ_VECTOR;
+            }
+        }
+    }
+
+    // Debugging tools
+    pub fn step(&mut self, dbg: bool) {
+        // Step through one full CPU instruction or interrupt
+        if dbg {
+            self.trace();
+        }
+        self.tick();
+        while self.ins_ticks > 0 {
+            self.tick();
+        }
     }
 
     fn trace(&mut self) {
         self.store.data = self.bus.peek(self.pc);
-        
+
         let ins;
         if let Some(opcode) = opcodes_list[self.store.data as usize].as_ref() {
             ins = Some(opcode);
         } else {
-            println!("op: {:02x}", self.store.data);
+            println!("unknown opcode: {:02x}", self.store.data);
             unimplemented!();
         }
 
@@ -433,20 +461,15 @@ impl CPU {
         buf.push_str(
             format!(
                 "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}",
-                self.a, self.x, self.y, self.p.bits(), self.sp, self.total_ticks
+                self.a,
+                self.x,
+                self.y,
+                self.p.bits(),
+                self.sp,
+                self.total_ticks
             )
             .as_str(),
         );
         println!("{buf}");
-    }
-
-    pub fn step(&mut self, dbg: bool) {
-        if dbg {
-            self.trace();
-        }
-        self.tick();
-        while self.ins_ticks > 0 {
-            self.tick();
-        }
     }
 }

@@ -1,4 +1,4 @@
-use super::{Flags, CPU};
+use super::{Flags, CPU, IRQ_VECTOR, NMI_VECTOR};
 use crate::utils::{add_mod_8, bit_0, bit_6, bit_7, hi_byte, lo_byte};
 
 #[derive(Copy, Clone, PartialEq)]
@@ -52,7 +52,7 @@ impl OpCode {
 
 lazy_static! {
     pub static ref opcodes_list: [Option<OpCode>; 256] = [
-        Some(OpCode::new(0x00, "BRK".to_string(), AddressingMode::IMP, None,                CPU::brk, 7, 1)),
+        Some(OpCode::new(0x00, "BRK".to_string(), AddressingMode::IMM, None,                CPU::brk, 7, 2)),
         Some(OpCode::new(0x01, "ORA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::ora, 6, 2)),
         None,
         None,
@@ -205,11 +205,11 @@ lazy_static! {
         Some(OpCode::new(0x96, "STX".to_string(), AddressingMode::ZPY, Some(CPU::addr_zpy), CPU::stx, 4, 2)),
         None,
         Some(OpCode::new(0x98, "TYA".to_string(), AddressingMode::IMP, None,                CPU::tya, 2, 1)),
-        Some(OpCode::new(0x99, "STA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::sta, 4, 3)),
+        Some(OpCode::new(0x99, "STA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::sta, 5, 3)),
         Some(OpCode::new(0x9A, "TXS".to_string(), AddressingMode::IMP, None,                CPU::txs, 2, 1)),
         None,
         None,
-        Some(OpCode::new(0x9D, "STA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::sta, 4, 3)),
+        Some(OpCode::new(0x9D, "STA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::sta, 5, 3)),
         None,
         None,
         Some(OpCode::new(0xA0, "LDY".to_string(), AddressingMode::IMM, None,                CPU::ldy, 2, 2)),
@@ -379,11 +379,19 @@ impl CPU {
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.x);
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                self.store.data <= self.store.lo
+                
+                self.page_crossed = self.store.data > self.store.lo;
+                let write_ins = match self.ins.unwrap().code {
+                    0x9D | 0x1E | 0x3E | 0x5E | 0x7E | 0xDE | 0xFE => true,
+                    _ => false,
+                };
+                !(self.page_crossed || write_ins)
             }
             2 => {
                 let _ = self.bus.mem_read(self.store.addr);
-                self.store.addr = self.store.addr.wrapping_add(0x100);
+                if self.page_crossed {
+                    self.store.addr = self.store.addr.wrapping_add(0x100);
+                }
                 true
             }
             _ => unreachable!(),
@@ -403,11 +411,19 @@ impl CPU {
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                self.store.data <= self.store.lo
+                
+                self.page_crossed = self.store.data > self.store.lo;
+                let write_ins = match self.ins.unwrap().code {
+                    0x99 => true,
+                    _ => false,
+                };
+                !(self.page_crossed || write_ins)
             }
             2 => {
                 let _ = self.bus.mem_read(self.store.addr);
-                self.store.addr = self.store.addr.wrapping_add(0x100);
+                if self.page_crossed {
+                    self.store.addr = self.store.addr.wrapping_add(0x100);
+                }
                 true
             }
             _ => unreachable!(),
@@ -455,11 +471,19 @@ impl CPU {
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                self.store.data <= self.store.lo
+                
+                self.page_crossed = self.store.data > self.store.lo;
+                let write_ins = match self.ins.unwrap().code {
+                    0x91 => true,
+                    _ => false,
+                };
+                !(self.page_crossed || write_ins)
             }
             3 => {
                 let _ = self.bus.mem_read(self.store.addr);
-                self.store.addr = self.store.addr.wrapping_add(0x100);
+                if self.page_crossed {
+                    self.store.addr = self.store.addr.wrapping_add(0x100);
+                }
                 true
             }
             _ => unreachable!(),
@@ -470,18 +494,18 @@ impl CPU {
     fn brk(&mut self, subcycle: u8) -> bool {
         match subcycle {
             0 => {
-                let _ = self.get_operand();
-                self.sp = self.sp.wrapping_sub(1);
+                let _ = self.bus.mem_read(self.pc);
+                if self.software_interrupt {
+                    self.pc = self.pc.wrapping_add(1);
+                }
                 false
             }
             1 => {
                 self.stack_push(hi_byte(self.pc));
-                self.sp = self.sp.wrapping_sub(1);
                 false
             }
             2 => {
                 self.stack_push(lo_byte(self.pc));
-                self.sp = self.sp.wrapping_sub(1);
                 false
             }
             3 => {
@@ -490,19 +514,30 @@ impl CPU {
                 } else {
                     self.p.bits() & !Flags::BREAK.bits()
                 };
-                self.software_interrupt = false;
                 self.stack_push(p);
                 false
             }
             4 => {
-                self.store.lo = self.bus.mem_read(self.store.vector);
                 self.p.insert(Flags::INTERRUPT_DISABLE);
+                match self.store.vector {
+                    NMI_VECTOR => {
+                        self.nmi_pending = false;
+                    }
+                    IRQ_VECTOR => {
+                        if self.hijacked { self.irq_pending = false };
+                    }
+                    _ => unreachable!()
+                }
+                self.store.lo = self.bus.mem_read(self.store.vector);
                 false
             }
             5 => {
                 self.store.hi = self.bus.mem_read(self.store.vector + 1);
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
                 self.pc = self.store.addr;
+
+                self.software_interrupt = false;
+                self.servicing_interrupt = false;
                 true
             }
             _ => unreachable!(),
@@ -1154,7 +1189,7 @@ impl CPU {
 
     fn get_operand(&mut self) -> u8 {
         match self.ins.unwrap().mode {
-            AddressingMode::IMP | AddressingMode::ACC => self.bus.mem_read(self.pc.wrapping_add(1)),
+            AddressingMode::IMP | AddressingMode::ACC => self.bus.mem_read(self.pc),
             AddressingMode::IMM | AddressingMode::REL => {
                 self.pc = self.pc.wrapping_add(1);
                 self.bus.mem_read(self.pc.wrapping_sub(1))
