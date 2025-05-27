@@ -108,7 +108,7 @@ fn main() -> Result<(), String> {
         .create_texture_streaming(PixelFormatEnum::RGB24, 256, 240)
         .map_err(|e| e.to_string())?;
 
-    // Create your emulator
+    // Create emulator
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
         die!("usage: cargo run -- <path to rom>");

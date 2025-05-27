@@ -1,4 +1,7 @@
-use crate::loader::{Cartridge, Mirroring};
+use crate::{
+    loader::{Cartridge, Mirroring},
+    utils::{bit_0, bit_1},
+};
 
 bitflags! {
     struct PPUCTRL: u8 {
@@ -24,33 +27,28 @@ bitflags! {
     }
 
     struct PPUSTATUS: u8 {
-        // bits [0, 4] for ppu open bus?
+        // get bits [0, 4] from ppu open bus
         const SPRITE_OVERFLOW = 0b0010_0000;
         const SPRITE0_HIT = 0b0100_0000;
         const VBLANK_FLAG = 0b1000_0000;
     }
 }
 
-struct PPUSCROLL {
-    w1: u8,
-    w2: u8,
+impl PPUCTRL {
+    pub fn write(&mut self, data: u8) {
+        unimplemented!()
+    }
 }
 
-impl PPUSCROLL {}
-
-struct PPUADDR {
-    hi: u8,
-    lo: u8,
+impl PPUMASK {
+    pub fn write(&mut self, data: u8) {
+        unimplemented!()
+    }
 }
 
-impl PPUADDR {
-    pub fn update(&mut self, data: u8, w: &mut u8) {
-        if *w == 0 {
-            self.hi = data;
-        } else {
-            self.lo = data;
-        }
-        *w ^= 1;
+impl PPUSTATUS {
+    pub fn read(&mut self) -> u8 {
+        unimplemented!()
     }
 }
 
@@ -95,11 +93,6 @@ pub struct PPU {
     ppu_mask: PPUMASK,
     ppu_status: PPUSTATUS,
     oam_addr: u8,
-    oam_data: u8,
-    ppu_scroll: PPUSCROLL,
-    ppu_addr: PPUADDR,
-    ppu_data: u8,
-    oam_dma: u8,
 
     // PPU metadata
     mirroring: Mirroring,
@@ -150,11 +143,6 @@ impl PPU {
             ppu_mask: PPUMASK::empty(),
             ppu_status: PPUSTATUS::VBLANK_FLAG.union(PPUSTATUS::SPRITE_OVERFLOW),
             oam_addr: 0,
-            oam_data: 0,
-            ppu_scroll: PPUSCROLL { w1: 0, w2: 0 },
-            ppu_addr: PPUADDR { hi: 0, lo: 0 },
-            ppu_data: 0,
-            oam_dma: 0,
 
             mirroring: cartridge.mirroring,
             odd_frame: false,
@@ -167,16 +155,90 @@ impl PPU {
         }
     }
 
-    pub fn reg_read(&mut self, reg: u8) -> u8 {
-        unimplemented!()
+    pub fn reset(&mut self) {}
+
+    fn read_oam_data(&mut self) -> u8 {
+        let data = self.oam[self.oam_addr as usize];
+        self.oam_addr = self.oam_addr.wrapping_add(1);
+        data
     }
-    
-    pub fn reg_write(&mut self, reg: u8, data: u8) {
+
+    fn read_ppu_data(&mut self) -> u8 {
         unimplemented!()
     }
 
-    pub fn peek(&self, reg: u8) -> u8 {
+    fn write_oam_addr(&mut self, data: u8) {
         unimplemented!()
+    }
+
+    fn write_oam_data(&mut self, data: u8) {
+        self.oam[self.oam_addr as usize] = data;
+        self.oam_addr = self.oam_addr.wrapping_add(1);
+    }
+
+    pub fn write_ppu_scroll(&mut self, data: u8) {
+        if self.w == 0 {
+            let coarse_x = data >> 3; // top 5 bits -> tile column
+            let fine_x = data & 0x07; // low 3 bits -> pixel offset
+
+            // bits [0,4] = coarse X
+            self.t = (self.t & !0x1F) | (coarse_x as u16);
+            self.x = fine_x;
+        } else {
+            let coarse_y = data >> 3; // top 5 bits -> tile row
+            let fine_y = data & 0x07; // low 3 bits -> pixel offset
+
+            // bits [12,14] = fine Y, bits [5,9] = coarse Y
+            self.t = (self.t & !0x73E0) | ((fine_y as u16) << 12) | ((coarse_y as u16) << 5);
+        }
+        self.w ^= 1;
+    }
+
+    pub fn write_ppu_addr(&mut self, data: u8) {
+        if self.w == 0 {
+            // set bits [13,8]
+            self.t = (self.t & !0x3F00) | (((data as u16) & 0x3F) << 8);
+        } else {
+            // set bits [7,0]
+            self.t = (self.t & !0x00FF) | (data as u16);
+            self.v = self.t;
+        }
+        self.w ^= 1;
+    }
+
+    fn write_ppu_data(&mut self, data: u8) {
+        unimplemented!()
+    }
+
+    pub fn reg_read(&mut self, reg: u8) -> u8 {
+        match reg {
+            2 => self.ppu_status.read(),
+            4 => self.read_oam_data(),
+            7 => self.read_ppu_data(),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn reg_write(&mut self, reg: u8, data: u8) {
+        match reg {
+            0 => self.ppu_ctrl.write(data),
+            1 => self.ppu_mask.write(data),
+            3 => self.write_oam_addr(data),
+            4 => self.write_oam_data(data),
+            5 => self.write_ppu_scroll(data),
+            6 => self.write_ppu_addr(data),
+            7 => self.write_ppu_data(data),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn peek(&self, reg: u8) -> u8 {
+        match reg {
+            2 => self.ppu_status.bits(),
+            4 => self.oam[self.oam_addr as usize],
+            7 => self.read_buffer,
+            _ => unimplemented!(),
+        }
     }
 
     pub fn tick(&mut self) {

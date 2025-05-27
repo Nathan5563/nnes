@@ -11,7 +11,7 @@ pub struct NNES {
     pub master_clock: u64,
     pub cpu: CPU,
     pub ppu: Rc<RefCell<PPU>>,
-    // pub apu: APU,
+    // pub apu: Rc<RefCell<APU>>,
 }
 
 impl NNES {
@@ -30,6 +30,7 @@ impl NNES {
     }
 
     pub fn reset(&mut self) {
+        self.ppu.borrow_mut().reset();
         self.cpu.reset();
     }
 
@@ -46,7 +47,7 @@ impl NNES {
 
         // // APU runs at master/24
         // if self.master_clock % 24 == 0 {
-        //     self.apu.tick();
+        //     self.apu.borrow_mut().tick();
         // }
 
         self.master_clock = self.master_clock.wrapping_add(1);

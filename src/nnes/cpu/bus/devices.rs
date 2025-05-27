@@ -1,7 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 use super::{BusDevice, Cartridge, PPU};
 
-// Internal RAM
 pub struct RAM {
     ram: [u8; 0x0800],
 }
@@ -24,7 +23,6 @@ impl BusDevice for RAM {
     }
 }
 
-// PPU IO Registers
 pub struct PPU_Regs {
     ppu: Rc<RefCell<PPU>>,
 }
@@ -50,8 +48,8 @@ impl BusDevice for PPU_Regs {
     }
 }
 
-// APU IO Registers
 pub struct APU_Regs {
+    // apu: Rc<RefCell<APU>>,
     apu_regs: [u8; 0x0020],
 }
 
@@ -95,7 +93,6 @@ impl BusDevice for Expansion_ROM {
     }
 }
 
-// Save RAM
 pub struct SRAM {
     sram: Vec<u8>,
 }
@@ -118,7 +115,6 @@ impl BusDevice for SRAM {
     }
 }
 
-// Program ROM
 pub struct PRG_ROM {
     num_banks: u8,
     prg_rom: Vec<u8>,
@@ -148,10 +144,18 @@ impl BusDevice for PRG_ROM {
     }
 }
 
+/**
+ * Map various memory objects into the CPU's address space based on the
+ * inserted cartridge.
+ * @param   ppu                 pointer to a shared PPU object
+ * @param   cartridge           reference to inserted cartridge
+ * @param   memory_handlers     reference to vector of pointers to available
+ *                              memory objects
+ */
 pub fn memory_map(
     ppu: Rc<RefCell<PPU>>,
-    memory_handlers: &mut Vec<Box<dyn BusDevice>>,
     cartridge: &Cartridge,
+    memory_handlers: &mut Vec<Box<dyn BusDevice>>,
 ) {
     memory_handlers.push(Box::new(RAM { ram: [0; 0x0800] }));
     memory_handlers.push(Box::new(PPU_Regs { ppu }));
