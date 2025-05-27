@@ -1,5 +1,12 @@
 use std::{fs, iter};
-use crate::utils::hi_nibble;
+use crate::utils::{bit_0, bit_1, bit_3, hi_nibble, from_nibbles};
+
+#[derive(Clone, Copy)]
+pub enum Mirroring {
+    Vertical,
+    Horizontal,
+    Alternative,
+}
 
 const NES_MAGIC: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 
@@ -27,7 +34,7 @@ pub fn validate(arg: &String) -> Result<Vec<u8>, String> {
     // Not mapper 0
     let lo = hi_nibble(rom[6]);
     let hi = hi_nibble(rom[7]);
-    let mapper = u16::from_le_bytes([lo, hi]);
+    let mapper = from_nibbles(lo, hi);
     if mapper != 0 {
         return Err("error: unsupported mapper".to_string());
     }
@@ -38,11 +45,13 @@ pub fn validate(arg: &String) -> Result<Vec<u8>, String> {
 pub struct Cartridge {
     pub has_trainer: bool,
     pub has_sram: bool,
-
+    
     pub sram: Vec<u8>,
     pub prg_rom: Vec<u8>,
     pub chr_rom: Vec<u8>,
     pub mapper: u8,
+
+    pub mirroring: Mirroring,
 }
 
 impl Cartridge {
@@ -67,7 +76,7 @@ impl Cartridge {
             - [11,15]  = unused padding
 
             Flags 6 bits:
-            - 0         = 0b0: vertical arrangement ("horizontal mirrored"), vice versa
+            - 0         = 0b0: horizontal mirroring, 0b1: vertical mirroring
             - 1         = 0b1: contains SRAM at [0x6000, 0x8000)
             - 2         = 0b1: contains trainer at [0x7000, 0x7200)
             - 3         = 0b1: alternative nametable layout
@@ -98,8 +107,8 @@ impl Cartridge {
         let trainer_size = if rom[6] & 0b100 != 0 { 512 } else { 0 };
         let prg_start = 16 + trainer_size;
         let chr_start = prg_start + prg_rom_size;
-        let mapper_lo = (rom[6] & 0xf0) >> 4;
-        let mapper_hi = rom[7] & 0xf0;
+        let mapper_lo = hi_nibble(rom[6]);
+        let mapper_hi = hi_nibble(rom[7]);
 
         let sram: Vec<u8> = iter::repeat(0u8)
             .take(0x1000)
@@ -108,16 +117,26 @@ impl Cartridge {
             .collect();
         let prg_rom = rom[prg_start..prg_start + prg_rom_size].to_vec();
         let chr_rom = rom[chr_start..chr_start + chr_rom_size].to_vec();
-        let mapper = mapper_hi | mapper_lo;
+        let mapper = from_nibbles(mapper_lo, mapper_hi);
+        
+        let mirroring = if bit_3(rom[6]) == 1 {
+            Mirroring::Alternative
+        } else if bit_0(rom[6]) == 0 {
+            Mirroring::Horizontal
+        } else {
+            Mirroring::Vertical
+        };
 
         Cartridge {
             has_trainer: trainer_size != 0,
-            has_sram: rom[6] & 0b10 != 0,
+            has_sram: bit_1(rom[6]) != 0,
 
             sram,
             prg_rom,
             chr_rom,
             mapper,
+
+            mirroring,
         }
     }
 }
