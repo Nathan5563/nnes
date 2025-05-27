@@ -22,6 +22,10 @@ pub fn lo_nibble(n: u8) -> u8 {
     n & 0xF
 }
 
+pub fn from_nibbles(lo: u8, hi: u8) -> u8 {
+    (hi << 4) | lo
+}
+
 pub fn bit_7(n: u8) -> u8 {
     n & 0b1000_0000
 }
