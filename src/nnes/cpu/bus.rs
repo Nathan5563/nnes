@@ -1,6 +1,7 @@
 mod devices;
 
-use super::super::Cartridge;
+use std::{rc::Rc, cell::RefCell};
+use super::super::{Cartridge, PPU};
 use devices::memory_map;
 
 pub trait BusDevice {
@@ -11,16 +12,18 @@ pub trait BusDevice {
 }
 
 pub struct Bus {
+    ppu: Rc<RefCell<PPU>>,
     memory_handlers: Vec<Box<dyn BusDevice>>,
     open_bus: u8,
 }
 
 impl Bus {
-    pub fn new(cartridge: &Cartridge) -> Self {
-        let mut memory_handlers = Vec::new();
-        memory_map(&mut memory_handlers, cartridge);
+    pub fn new(ppu: Rc<RefCell<PPU>>, cartridge: &Cartridge) -> Self {
+        let mut memory_handlers: Vec<Box<dyn BusDevice>> = Vec::new();
+        memory_map(ppu.clone(), &mut memory_handlers, cartridge);
 
         Bus {
+            ppu,
             memory_handlers,
             open_bus: 0,
         }

@@ -19,9 +19,9 @@ bitflags! {
 }
 
 // pc is fetched from 0xFFFC/0xFFFD on startup
-const RESET_VECTOR: u16 = 0;
+const RESET_VECTOR: u16 = 0xFFFC;
 // on reset, three pushes occur changing this from 0 to 0xfd
-const RESET_SP: u8 = 0xfd;
+const RESET_SP: u8 = 0xFD;
 // unused flag always starts on, interrupt disable is turned on for reset sequence
 const RESET_FLAGS: Flags = Flags::UNUSED.union(Flags::INTERRUPT_DISABLE);
 // reset sequence requires 7 cpu cycles
@@ -113,10 +113,6 @@ impl CPU {
             ins_ticks: 0,
             total_ticks: 0,
         }
-    }
-
-    pub fn set_pc(&mut self, addr: u16) {
-        self.pc = addr;
     }
 
     pub fn reset(&mut self) {

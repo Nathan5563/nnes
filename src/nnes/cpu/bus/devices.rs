@@ -1,4 +1,5 @@
-use super::{BusDevice, Cartridge};
+use std::{rc::Rc, cell::RefCell};
+use super::{BusDevice, Cartridge, PPU};
 
 // Internal RAM
 pub struct RAM {
@@ -25,7 +26,7 @@ impl BusDevice for RAM {
 
 // PPU IO Registers
 pub struct PPU_Regs {
-    ppu_regs: [u8; 0x0008],
+    ppu: Rc<RefCell<PPU>>,
 }
 
 impl BusDevice for PPU_Regs {
@@ -34,15 +35,18 @@ impl BusDevice for PPU_Regs {
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        unimplemented!()
+        let reg = (addr & 0x7) as u8;
+        self.ppu.borrow_mut().reg_read(reg)
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
-        unimplemented!()
+        let reg = (addr & 0x7) as u8;
+        self.ppu.borrow_mut().reg_write(reg, data);
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        self.ppu_regs[(addr as usize - 0x2000) & 0x7]
+        let reg = (addr & 0x7) as u8;
+        self.ppu.borrow().peek(reg)
     }
 }
 
@@ -127,38 +131,30 @@ impl BusDevice for PRG_ROM {
 
     fn mem_read(&mut self, addr: u16) -> u8 {
         match self.num_banks {
-            1 => {
-                self.prg_rom[(addr as usize - 0x8000) & 0x3FFF]
-            }
-            2 => {
-                self.prg_rom[addr as usize - 0x8000]
-            }
-            _ => unimplemented!()
+            1 => self.prg_rom[(addr as usize - 0x8000) & 0x3FFF],
+            2 => self.prg_rom[addr as usize - 0x8000],
+            _ => unimplemented!(),
         }
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        unreachable!()
-    }
+    fn mem_write(&mut self, addr: u16, data: u8) {}
 
     fn peek(&self, addr: u16) -> u8 {
         match self.num_banks {
-            1 => {
-                self.prg_rom[(addr as usize - 0x8000) & 0x3FFF]
-            }
-            2 => {
-                self.prg_rom[addr as usize - 0x8000]
-            }
-            _ => unimplemented!()
+            1 => self.prg_rom[(addr as usize - 0x8000) & 0x3FFF],
+            2 => self.prg_rom[addr as usize - 0x8000],
+            _ => unimplemented!(),
         }
     }
 }
 
-pub fn memory_map(memory_handlers: &mut Vec<Box<dyn BusDevice>>, cartridge: &Cartridge) {
+pub fn memory_map(
+    ppu: Rc<RefCell<PPU>>,
+    memory_handlers: &mut Vec<Box<dyn BusDevice>>,
+    cartridge: &Cartridge,
+) {
     memory_handlers.push(Box::new(RAM { ram: [0; 0x0800] }));
-    memory_handlers.push(Box::new(PPU_Regs {
-        ppu_regs: [0; 0x0008],
-    }));
+    memory_handlers.push(Box::new(PPU_Regs { ppu }));
     memory_handlers.push(Box::new(APU_Regs {
         apu_regs: [0; 0x0020],
     }));
@@ -169,8 +165,5 @@ pub fn memory_map(memory_handlers: &mut Vec<Box<dyn BusDevice>>, cartridge: &Car
     }
     let prg_rom = cartridge.prg_rom.clone();
     let num_banks = (prg_rom.len() / 0x4000) as u8;
-    memory_handlers.push(Box::new(PRG_ROM {
-        prg_rom,
-        num_banks,
-    }));
+    memory_handlers.push(Box::new(PRG_ROM { prg_rom, num_banks }));
 }

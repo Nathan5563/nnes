@@ -85,7 +85,7 @@ pub struct PPU {
 
     // Buffers
     read_buffer: u8,
-    output_buffer: [u8; 256 * 240],
+    pub output_buffer: [u8; 256 * 240],
 
     // Open bus
     open_bus: u8,
@@ -106,7 +106,6 @@ pub struct PPU {
     odd_frame: bool,
     dot: u16,
     scanline: i16,
-    on_nmi: Box<dyn FnMut()>,
 
     // Debugging tools
     total_dots: u64,
@@ -115,7 +114,7 @@ pub struct PPU {
 }
 
 impl PPU {
-    pub fn new(cartridge: &Cartridge, on_nmi: Box<dyn FnMut()>) -> Self {
+    pub fn new(cartridge: &Cartridge) -> Self {
         PPU {
             v: 0,
             t: 0,
@@ -161,7 +160,6 @@ impl PPU {
             odd_frame: false,
             dot: 0,
             scanline: 0,
-            on_nmi,
 
             total_dots: 0,
             total_scanlines: 0,
@@ -169,84 +167,96 @@ impl PPU {
         }
     }
 
+    pub fn reg_read(&mut self, reg: u8) -> u8 {
+        unimplemented!()
+    }
+    
+    pub fn reg_write(&mut self, reg: u8, data: u8) {
+        unimplemented!()
+    }
+
+    pub fn peek(&self, reg: u8) -> u8 {
+        unimplemented!()
+    }
+
     pub fn tick(&mut self) {
-        //————————————————————————————————————————————————————————————————
-        //  Work for current dot
-        //————————————————————————————————————————————————————————————————
-        // Pre-render line start: clear flags
-        if self.scanline == 261 && self.dot == 1 {
-            self.clear_vblank_and_sprite_flags();
-        }
+        // //————————————————————————————————————————————————————————————————
+        // //  Work for current dot
+        // //————————————————————————————————————————————————————————————————
+        // // Pre-render line start: clear flags
+        // if self.scanline == 261 && self.dot == 1 {
+        //     self.clear_vblank_and_sprite_flags();
+        // }
 
-        // VBlank start: set flag & NMI
-        if self.scanline == 241 && self.dot == 1 {
-            self.set_vblank_flag();
-            if self.ppu_ctrl.contains(PPUCTRL::VBLANK_NMI) {
-                (self.on_nmi)();
-            }
-        }
+        // // VBlank start: set flag & NMI
+        // if self.scanline == 241 && self.dot == 1 {
+        //     self.set_vblank_flag();
+        //     if self.ppu_ctrl.contains(PPUCTRL::VBLANK_NMI) {
+        //         (self.on_nmi)();
+        //     }
+        // }
 
-        // Background & sprite pipelines on visible & pre-render fetch ranges
-        if (0..=239).contains(&self.scanline) || self.scanline == 261 {
-            // Background fetch + shift (dots 1–256, 321–336)
-            if (1..=256).contains(&self.dot) || (321..=336).contains(&self.dot) {
-                match self.dot % 8 {
-                    1 => self.fetch_name_table_byte(),
-                    3 => self.fetch_attribute_byte(),
-                    5 => self.fetch_pattern_low_byte(),
-                    7 => self.fetch_pattern_high_byte(),
-                    0 => {
-                        self.load_bg_shifters();
-                        self.increment_scroll_x();
-                    }
-                    _ => {}
-                }
-            }
+        // // Background & sprite pipelines on visible & pre-render fetch ranges
+        // if (0..=239).contains(&self.scanline) || self.scanline == 261 {
+        //     // Background fetch + shift (dots 1–256, 321–336)
+        //     if (1..=256).contains(&self.dot) || (321..=336).contains(&self.dot) {
+        //         match self.dot % 8 {
+        //             1 => self.fetch_name_table_byte(),
+        //             3 => self.fetch_attribute_byte(),
+        //             5 => self.fetch_pattern_low_byte(),
+        //             7 => self.fetch_pattern_high_byte(),
+        //             0 => {
+        //                 self.load_bg_shifters();
+        //                 self.increment_scroll_x();
+        //             }
+        //             _ => {}
+        //         }
+        //     }
 
-            // End of scanline horizontal wrap at dot 256
-            if self.dot == 256 {
-                self.increment_scroll_y();
-            }
+        //     // End of scanline horizontal wrap at dot 256
+        //     if self.dot == 256 {
+        //         self.increment_scroll_y();
+        //     }
 
-            // Copy scroll bits into v at dot 257
-            if self.dot == 257 {
-                self.copy_horizontal_scroll();
-            }
+        //     // Copy scroll bits into v at dot 257
+        //     if self.dot == 257 {
+        //         self.copy_horizontal_scroll();
+        //     }
 
-            // On pre-render line only, copy vertical bits at dots 280–304
-            if self.scanline == 261 && (280..=304).contains(&self.dot) {
-                self.copy_vertical_scroll();
-            }
-        }
+        //     // On pre-render line only, copy vertical bits at dots 280–304
+        //     if self.scanline == 261 && (280..=304).contains(&self.dot) {
+        //         self.copy_vertical_scroll();
+        //     }
+        // }
 
-        // Sprite evaluation & fetch (visible lines only)
-        if (0..=239).contains(&self.scanline) {
-            // On dot 1 start secondary OAM
-            if self.dot == 1 {
-                self.clear_secondary_oam();
-            }
-            // Dots 1–256: scan primary OAM for this scanline
-            if (1..=256).contains(&self.dot) {
-                self.evaluate_sprite_for_cycle();
-            }
-            // Dots 257–320: fetch pattern bytes & fill sprite shifters
-            if (257..=320).contains(&self.dot) {
-                self.fetch_sprite_pattern_byte_for_cycle();
-            }
-        }
+        // // Sprite evaluation & fetch (visible lines only)
+        // if (0..=239).contains(&self.scanline) {
+        //     // On dot 1 start secondary OAM
+        //     if self.dot == 1 {
+        //         self.clear_secondary_oam();
+        //     }
+        //     // Dots 1–256: scan primary OAM for this scanline
+        //     if (1..=256).contains(&self.dot) {
+        //         self.evaluate_sprite_for_cycle();
+        //     }
+        //     // Dots 257–320: fetch pattern bytes & fill sprite shifters
+        //     if (257..=320).contains(&self.dot) {
+        //         self.fetch_sprite_pattern_byte_for_cycle();
+        //     }
+        // }
 
-        // Pixel output & shifter advance (visible area only)
-        if (0..=239).contains(&self.scanline) && (1..=256).contains(&self.dot) {
-            // Shift background & sprites
-            self.shift_bg_shifters();
-            self.shift_sprite_shifters();
+        // // Pixel output & shifter advance (visible area only)
+        // if (0..=239).contains(&self.scanline) && (1..=256).contains(&self.dot) {
+        //     // Shift background & sprites
+        //     self.shift_bg_shifters();
+        //     self.shift_sprite_shifters();
 
-            // Combine bg + sprite pixels, handle sprite-0 hit, palette lookup
-            let color = self.pixel_mux_and_palette();
-            let x = (self.dot - 1) as usize;
-            let y = self.scanline as usize;
-            self.output_buffer[y * 256 + x] = color;
-        }
+        //     // Combine bg + sprite pixels, handle sprite-0 hit, palette lookup
+        //     let color = self.pixel_mux_and_palette();
+        //     let x = (self.dot - 1) as usize;
+        //     let y = self.scanline as usize;
+        //     self.output_buffer[y * 256 + x] = color;
+        // }
 
         //————————————————————————————————————————————————————————————————
         //  Timing calculations
