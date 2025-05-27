@@ -59,16 +59,16 @@ pub struct CPU {
     // FSM metadata
     state: CPUState,
     ins: Option<&'static OpCode>,
+    ins_ticks: i8,
     store: CPUStore,
     software_interrupt: bool,
-    nmi_pending: bool,
+    pub nmi_pending: bool,
     irq_pending: bool,
     servicing_interrupt: bool,
     hijacked: bool,
     page_crossed: bool,
 
     // Debugging tools
-    ins_ticks: i8,
     total_ticks: u64,
 }
 
@@ -160,6 +160,9 @@ impl CPU {
     }
 
     pub fn tick(&mut self) {
+        //————————————————————————————————————————————————————————————————
+        //  Work for current cycle by finite state machine
+        //————————————————————————————————————————————————————————————————
         match self.state {
             CPUState::Fetch => {
                 self.fetch();
@@ -190,6 +193,9 @@ impl CPU {
             }
         }
 
+        //————————————————————————————————————————————————————————————————
+        //  Timing calculations
+        //————————————————————————————————————————————————————————————————
         self.ins_ticks += 1;
         self.total_ticks += 1;
     }

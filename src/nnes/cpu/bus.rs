@@ -1,6 +1,7 @@
 mod devices;
 
 use super::super::Cartridge;
+use devices::memory_map;
 
 pub trait BusDevice {
     fn contains(&self, addr: u16) -> bool;
@@ -15,9 +16,9 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn new(cartridge: Cartridge) -> Self {
+    pub fn new(cartridge: &Cartridge) -> Self {
         let mut memory_handlers = Vec::new();
-        devices::memory_map(&mut memory_handlers, cartridge);
+        memory_map(&mut memory_handlers, cartridge);
 
         Bus {
             memory_handlers,
@@ -33,8 +34,7 @@ impl Bus {
                 return v;
             }
         }
-        // self.open_bus
-        unimplemented!(); // get rid of this and uncomment the above once finished
+        self.open_bus
         // handle dummys somehow (new func or simple param to indicate)
     }
 
@@ -46,7 +46,6 @@ impl Bus {
                 return;
             }
         }
-        panic!("Unmapped write at address ${addr}"); // get rid of this once finished
     }
 
     pub fn peek(&self, addr: u16) -> u8 {
@@ -55,8 +54,7 @@ impl Bus {
                 return handler.peek(addr);
             }
         }
-        // self.open_bus
-        unimplemented!(); // get rid of this and uncomment the above once finished
+        self.open_bus
         // handle dummys somehow (new func or simple param to indicate)
     }
 }

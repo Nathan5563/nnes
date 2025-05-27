@@ -154,8 +154,7 @@ impl BusDevice for PRG_ROM {
     }
 }
 
-pub fn memory_map(memory_handlers: &mut Vec<Box<dyn BusDevice>>, cartridge: Cartridge) {
-    // attach RAM, PPU_Regs, APU_Regs, SRAM as needed, PRG_ROM, and other memory objects
+pub fn memory_map(memory_handlers: &mut Vec<Box<dyn BusDevice>>, cartridge: &Cartridge) {
     memory_handlers.push(Box::new(RAM { ram: [0; 0x0800] }));
     memory_handlers.push(Box::new(PPU_Regs {
         ppu_regs: [0; 0x0008],
@@ -165,10 +164,10 @@ pub fn memory_map(memory_handlers: &mut Vec<Box<dyn BusDevice>>, cartridge: Cart
     }));
     if cartridge.has_trainer || cartridge.has_sram {
         memory_handlers.push(Box::new(SRAM {
-            sram: cartridge.sram,
+            sram: cartridge.sram.clone(),
         }));
     }
-    let prg_rom = cartridge.prg_rom;
+    let prg_rom = cartridge.prg_rom.clone();
     let num_banks = (prg_rom.len() / 0x4000) as u8;
     memory_handlers.push(Box::new(PRG_ROM {
         prg_rom,
