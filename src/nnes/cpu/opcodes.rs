@@ -1,697 +1,1214 @@
-use std::collections::HashMap;
+use super::{Flags, CPU, IRQ_VECTOR, NMI_VECTOR};
+use crate::utils::{add_mod_8, bit_0, bit_6, bit_7, hi_byte, lo_byte};
 
-use crate::nnes::cpu::flags::{Flag, BF, CF, DF, IF, NF, VF, ZF};
-use crate::nnes::cpu::registers::Register;
-use crate::nnes::memory::{AddressingMode, Mem};
-use crate::nnes::{IRQ_VECTOR, NNES};
-use crate::types::{BIT_0, BIT_6, BIT_7, LOWER_BYTE, UPPER_BYTE};
-use crate::utils::{add_mod_16bit, add_mod_8bit};
+#[derive(Copy, Clone, PartialEq)]
+pub enum AddressingMode {
+    IMP,
+    ACC,
+    IMM,
+    ZPG,
+    ZPX,
+    ZPY,
+    ABS,
+    ABX,
+    ABY,
+    IND,
+    INX,
+    INY,
+    REL,
+}
 
 pub struct OpCode {
-    code: u8,
-    instruction: String,
-    bytes: u8,
-    cycles: u8,
-    mode: AddressingMode,
-    handler: fn(&mut NNES, mode: AddressingMode, cycle: &mut u8),
+    pub code: u8,
+    pub name: String,
+    pub mode: AddressingMode,
+    pub decode_fn: Option<fn(&mut CPU, subcycle: u8) -> bool>,
+    pub execute_fn: fn(&mut CPU, subcycle: u8) -> bool,
+    pub cycles: u8,
+    pub bytes: u8,
 }
 
 impl OpCode {
     pub fn new(
         code: u8,
-        instruction: String,
-        bytes: u8,
-        cycles: u8,
+        name: String,
         mode: AddressingMode,
-        handler: fn(&mut NNES, mode: AddressingMode, cycle: &mut u8),
+        decode_fn: Option<fn(&mut CPU, subcycle: u8) -> bool>,
+        execute_fn: fn(&mut CPU, subcycle: u8) -> bool,
+        cycles: u8,
+        bytes: u8,
     ) -> Self {
         OpCode {
-            code: code,
-            instruction: instruction,
-            bytes: bytes,
-            cycles: cycles,
-            mode: mode,
-            handler: handler,
+            code,
+            name,
+            mode,
+            decode_fn,
+            execute_fn,
+            cycles,
+            bytes,
         }
-    }
-
-    pub fn get_instruction(&self) -> &String {
-        &self.instruction
-    }
-
-    pub fn get_bytes(&self) -> u8 {
-        self.bytes
-    }
-
-    pub fn get_cycles(&self) -> u8 {
-        self.cycles
-    }
-
-    pub fn get_addressing_mode(&self) -> AddressingMode {
-        self.mode
-    }
-
-    pub fn get_handler(&self) -> &fn(&mut NNES, mode: AddressingMode, cycle: &mut u8) {
-        &self.handler
     }
 }
 
-impl NNES {
-    pub fn handle_tax(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let reg_acc: u8 = self.get_register(Register::Accumulator);
-        self.set_register_with_flags(Register::XIndex, reg_acc);
+lazy_static! {
+    pub static ref opcodes_list: [Option<OpCode>; 256] = [
+        Some(OpCode::new(0x00, "BRK".to_string(), AddressingMode::IMM, None,                CPU::brk, 7, 2)),
+        Some(OpCode::new(0x01, "ORA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::ora, 6, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x05, "ORA".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::ora, 3, 2)),
+        Some(OpCode::new(0x06, "ASL".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::asl, 5, 2)),
+        None,
+        Some(OpCode::new(0x08, "PHP".to_string(), AddressingMode::IMP, None,                CPU::php, 3, 1)),
+        Some(OpCode::new(0x09, "ORA".to_string(), AddressingMode::IMM, None,                CPU::ora, 2, 2)),
+        Some(OpCode::new(0x0A, "ASL".to_string(), AddressingMode::ACC, None,                CPU::asl, 2, 1)),
+        None,
+        None,
+        Some(OpCode::new(0x0D, "ORA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ora, 4, 3)),
+        Some(OpCode::new(0x0E, "ASL".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::asl, 6, 3)),
+        None,
+        Some(OpCode::new(0x10, "BPL".to_string(), AddressingMode::REL, None,                CPU::bpl, 2, 2)),
+        Some(OpCode::new(0x11, "ORA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::ora, 5, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x15, "ORA".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::ora, 4, 2)),
+        Some(OpCode::new(0x16, "ASL".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::asl, 6, 2)),
+        None,
+        Some(OpCode::new(0x18, "CLC".to_string(), AddressingMode::IMP, None,                CPU::clc, 2, 1)),
+        Some(OpCode::new(0x19, "ORA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::ora, 4, 3)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x1D, "ORA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::ora, 4, 3)),
+        Some(OpCode::new(0x1E, "ASL".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::asl, 7, 3)),
+        None,
+        Some(OpCode::new(0x20, "JSR".to_string(), AddressingMode::ABS, None,                CPU::jsr, 6, 3)),
+        Some(OpCode::new(0x21, "AND".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::and, 6, 2)),
+        None,
+        None,
+        Some(OpCode::new(0x24, "BIT".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::bit, 3, 2)),
+        Some(OpCode::new(0x25, "AND".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::and, 3, 2)),
+        Some(OpCode::new(0x26, "ROL".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::rol, 5, 2)),
+        None,
+        Some(OpCode::new(0x28, "PLP".to_string(), AddressingMode::IMP, None,                CPU::plp, 4, 1)),
+        Some(OpCode::new(0x29, "AND".to_string(), AddressingMode::IMM, None,                CPU::and, 2, 2)),
+        Some(OpCode::new(0x2A, "ROL".to_string(), AddressingMode::ACC, None,                CPU::rol, 2, 1)),
+        None,
+        Some(OpCode::new(0x2C, "BIT".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::bit, 4, 3)),
+        Some(OpCode::new(0x2D, "AND".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::and, 4, 3)),
+        Some(OpCode::new(0x2E, "ROL".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::rol, 6, 3)),
+        None,
+        Some(OpCode::new(0x30, "BMI".to_string(), AddressingMode::REL, None,                CPU::bmi, 2, 2)),
+        Some(OpCode::new(0x31, "AND".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::and, 5, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x35, "AND".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::and, 4, 2)),
+        Some(OpCode::new(0x36, "ROL".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::rol, 6, 2)),
+        None,
+        Some(OpCode::new(0x38, "SEC".to_string(), AddressingMode::IMP, None,                CPU::sec, 2, 1)),
+        Some(OpCode::new(0x39, "AND".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::and, 4, 3)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x3D, "AND".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::and, 4, 3)),
+        Some(OpCode::new(0x3E, "ROL".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::rol, 7, 3)),
+        None,
+        Some(OpCode::new(0x40, "RTI".to_string(), AddressingMode::IMP, None,                CPU::rti, 6, 1)),
+        Some(OpCode::new(0x41, "EOR".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::eor, 6, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x45, "EOR".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::eor, 3, 2)),
+        Some(OpCode::new(0x46, "LSR".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::lsr, 5, 2)),
+        None,
+        Some(OpCode::new(0x48, "PHA".to_string(), AddressingMode::IMP, None,                CPU::pha, 3, 1)),
+        Some(OpCode::new(0x49, "EOR".to_string(), AddressingMode::IMM, None,                CPU::eor, 2, 2)),
+        Some(OpCode::new(0x4A, "LSR".to_string(), AddressingMode::ACC, None,                CPU::lsr, 2, 1)),
+        None,
+        Some(OpCode::new(0x4C, "JMP".to_string(), AddressingMode::ABS, None,                CPU::jmp, 3, 3)),
+        Some(OpCode::new(0x4D, "EOR".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::eor, 4, 3)),
+        Some(OpCode::new(0x4E, "LSR".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::lsr, 6, 3)),
+        None,
+        Some(OpCode::new(0x50, "BVC".to_string(), AddressingMode::REL, None,                CPU::bvc, 2, 2)),
+        Some(OpCode::new(0x51, "EOR".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::eor, 5, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x55, "EOR".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::eor, 4, 2)),
+        Some(OpCode::new(0x56, "LSR".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::lsr, 6, 2)),
+        None,
+        Some(OpCode::new(0x58, "CLI".to_string(), AddressingMode::IMP, None,                CPU::cli, 2, 1)),
+        Some(OpCode::new(0x59, "EOR".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::eor, 4, 3)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x5D, "EOR".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::eor, 4, 3)),
+        Some(OpCode::new(0x5E, "LSR".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::lsr, 7, 3)),
+        None,
+        Some(OpCode::new(0x60, "RTS".to_string(), AddressingMode::IMP, None,                CPU::rts, 6, 1)),
+        Some(OpCode::new(0x61, "ADC".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::adc, 6, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x65, "ADC".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::adc, 3, 2)),
+        Some(OpCode::new(0x66, "ROR".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::ror, 5, 2)),
+        None,
+        Some(OpCode::new(0x68, "PLA".to_string(), AddressingMode::IMP, None,                CPU::pla, 4, 1)),
+        Some(OpCode::new(0x69, "ADC".to_string(), AddressingMode::IMM, None,                CPU::adc, 2, 2)),
+        Some(OpCode::new(0x6A, "ROR".to_string(), AddressingMode::ACC, None,                CPU::ror, 2, 1)),
+        None,
+        Some(OpCode::new(0x6C, "JMP".to_string(), AddressingMode::IND, None,                CPU::jmp, 5, 3)),  // Indirect bug
+        Some(OpCode::new(0x6D, "ADC".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::adc, 4, 3)),
+        Some(OpCode::new(0x6E, "ROR".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ror, 6, 3)),
+        None,
+        Some(OpCode::new(0x70, "BVS".to_string(), AddressingMode::REL, None,                CPU::bvs, 2, 2)),
+        Some(OpCode::new(0x71, "ADC".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::adc, 5, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x75, "ADC".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::adc, 4, 2)),
+        Some(OpCode::new(0x76, "ROR".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::ror, 6, 2)),
+        None,
+        Some(OpCode::new(0x78, "SEI".to_string(), AddressingMode::IMP, None,                CPU::sei, 2, 1)),
+        Some(OpCode::new(0x79, "ADC".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::adc, 4, 3)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0x7D, "ADC".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::adc, 4, 3)),
+        Some(OpCode::new(0x7E, "ROR".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::ror, 7, 3)),
+        None,
+        None,
+        Some(OpCode::new(0x81, "STA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::sta, 6, 2)),
+        None,
+        None,
+        Some(OpCode::new(0x84, "STY".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::sty, 3, 2)),
+        Some(OpCode::new(0x85, "STA".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::sta, 3, 2)),
+        Some(OpCode::new(0x86, "STX".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::stx, 3, 2)),
+        None,
+        Some(OpCode::new(0x88, "DEY".to_string(), AddressingMode::IMP, None,                CPU::dey, 2, 1)),
+        None,
+        Some(OpCode::new(0x8A, "TXA".to_string(), AddressingMode::IMP, None,                CPU::txa, 2, 1)),
+        None,
+        Some(OpCode::new(0x8C, "STY".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sty, 4, 3)),
+        Some(OpCode::new(0x8D, "STA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sta, 4, 3)),
+        Some(OpCode::new(0x8E, "STX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::stx, 4, 3)),
+        None,
+        Some(OpCode::new(0x90, "BCC".to_string(), AddressingMode::REL, None,                CPU::bcc, 2, 2)),
+        Some(OpCode::new(0x91, "STA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sta, 5, 2)),
+        None,
+        None,
+        Some(OpCode::new(0x94, "STY".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sty, 4, 2)),
+        Some(OpCode::new(0x95, "STA".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sta, 4, 2)),
+        Some(OpCode::new(0x96, "STX".to_string(), AddressingMode::ZPY, Some(CPU::addr_zpy), CPU::stx, 4, 2)),
+        None,
+        Some(OpCode::new(0x98, "TYA".to_string(), AddressingMode::IMP, None,                CPU::tya, 2, 1)),
+        Some(OpCode::new(0x99, "STA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::sta, 5, 3)),
+        Some(OpCode::new(0x9A, "TXS".to_string(), AddressingMode::IMP, None,                CPU::txs, 2, 1)),
+        None,
+        None,
+        Some(OpCode::new(0x9D, "STA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::sta, 5, 3)),
+        None,
+        None,
+        Some(OpCode::new(0xA0, "LDY".to_string(), AddressingMode::IMM, None,                CPU::ldy, 2, 2)),
+        Some(OpCode::new(0xA1, "LDA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::lda, 6, 2)),
+        Some(OpCode::new(0xA2, "LDX".to_string(), AddressingMode::IMM, None,                CPU::ldx, 2, 2)),
+        None,
+        Some(OpCode::new(0xA4, "LDY".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::ldy, 3, 2)),
+        Some(OpCode::new(0xA5, "LDA".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::lda, 3, 2)),
+        Some(OpCode::new(0xA6, "LDX".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::ldx, 3, 2)),
+        None,
+        Some(OpCode::new(0xA8, "TAY".to_string(), AddressingMode::IMP, None,                CPU::tay, 2, 1)),
+        Some(OpCode::new(0xA9, "LDA".to_string(), AddressingMode::IMM, None,                CPU::lda, 2, 2)),
+        Some(OpCode::new(0xAA, "TAX".to_string(), AddressingMode::IMP, None,                CPU::tax, 2, 1)),
+        None,
+        Some(OpCode::new(0xAC, "LDY".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ldy, 4, 3)),
+        Some(OpCode::new(0xAD, "LDA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::lda, 4, 3)),
+        Some(OpCode::new(0xAE, "LDX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ldx, 4, 3)),
+        None,
+        Some(OpCode::new(0xB0, "BCS".to_string(), AddressingMode::REL, None,                CPU::bcs, 2, 2)),
+        Some(OpCode::new(0xB1, "LDA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::lda, 5, 2)),
+        None,
+        None,
+        Some(OpCode::new(0xB4, "LDY".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::ldy, 4, 2)),
+        Some(OpCode::new(0xB5, "LDA".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::lda, 4, 2)),
+        Some(OpCode::new(0xB6, "LDX".to_string(), AddressingMode::ZPY, Some(CPU::addr_zpy), CPU::ldx, 4, 2)),
+        None,
+        Some(OpCode::new(0xB8, "CLV".to_string(), AddressingMode::IMP, None,                CPU::clv, 2, 1)),
+        Some(OpCode::new(0xB9, "LDA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::lda, 4, 3)),
+        Some(OpCode::new(0xBA, "TSX".to_string(), AddressingMode::IMP, None,                CPU::tsx, 2, 1)),
+        None,
+        Some(OpCode::new(0xBC, "LDY".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::ldy, 4, 3)),
+        Some(OpCode::new(0xBD, "LDA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::lda, 4, 3)),
+        Some(OpCode::new(0xBE, "LDX".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::ldx, 4, 3)),
+        None,
+        Some(OpCode::new(0xC0, "CPY".to_string(), AddressingMode::IMM, None,                CPU::cpy, 2, 2)),
+        Some(OpCode::new(0xC1, "CMP".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::cmp, 6, 2)),
+        None,
+        None,
+        Some(OpCode::new(0xC4, "CPY".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::cpy, 3, 2)),
+        Some(OpCode::new(0xC5, "CMP".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::cmp, 3, 2)),
+        Some(OpCode::new(0xC6, "DEC".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::dec, 5, 2)),
+        None,
+        Some(OpCode::new(0xC8, "INY".to_string(), AddressingMode::IMP, None,                CPU::iny, 2, 1)),
+        Some(OpCode::new(0xC9, "CMP".to_string(), AddressingMode::IMM, None,                CPU::cmp, 2, 2)),
+        Some(OpCode::new(0xCA, "DEX".to_string(), AddressingMode::IMP, None,                CPU::dex, 2, 1)),
+        None,
+        Some(OpCode::new(0xCC, "CPY".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::cpy, 4, 3)),
+        Some(OpCode::new(0xCD, "CMP".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::cmp, 4, 3)),
+        Some(OpCode::new(0xCE, "DEC".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::dec, 6, 3)),
+        None,
+        Some(OpCode::new(0xD0, "BNE".to_string(), AddressingMode::REL, None,                CPU::bne, 2, 2)),
+        Some(OpCode::new(0xD1, "CMP".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::cmp, 5, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0xD5, "CMP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::cmp, 4, 2)),
+        Some(OpCode::new(0xD6, "DEC".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::dec, 6, 2)),
+        None,
+        Some(OpCode::new(0xD8, "CLD".to_string(), AddressingMode::IMP, None,                CPU::cld, 2, 1)),
+        Some(OpCode::new(0xD9, "CMP".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::cmp, 4, 3)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0xDD, "CMP".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::cmp, 4, 3)),
+        Some(OpCode::new(0xDE, "DEC".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::dec, 7, 3)),
+        None,
+        Some(OpCode::new(0xE0, "CPX".to_string(), AddressingMode::IMM, None,                CPU::cpx, 2, 2)),
+        Some(OpCode::new(0xE1, "SBC".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::sbc, 6, 2)),
+        None,
+        None,
+        Some(OpCode::new(0xE4, "CPX".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::cpx, 3, 2)),
+        Some(OpCode::new(0xE5, "SBC".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::sbc, 3, 2)),
+        Some(OpCode::new(0xE6, "INC".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::inc, 5, 2)),
+        None,
+        Some(OpCode::new(0xE8, "INX".to_string(), AddressingMode::IMP, None,                CPU::inx, 2, 1)),
+        Some(OpCode::new(0xE9, "SBC".to_string(), AddressingMode::IMM, None,                CPU::sbc, 2, 2)),
+        Some(OpCode::new(0xEA, "NOP".to_string(), AddressingMode::IMP, None,                CPU::nop, 2, 1)),
+        None,
+        Some(OpCode::new(0xEC, "CPX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::cpx, 4, 3)),
+        Some(OpCode::new(0xED, "SBC".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sbc, 4, 3)),
+        Some(OpCode::new(0xEE, "INC".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::inc, 6, 3)),
+        None,
+        Some(OpCode::new(0xF0, "BEQ".to_string(), AddressingMode::REL, None,                CPU::beq, 2, 2)),
+        Some(OpCode::new(0xF1, "SBC".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sbc, 5, 2)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0xF5, "SBC".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sbc, 4, 2)),
+        Some(OpCode::new(0xF6, "INC".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::inc, 6, 2)),
+        None,
+        Some(OpCode::new(0xF8, "SED".to_string(), AddressingMode::IMP, None,                CPU::sed, 2, 1)),
+        Some(OpCode::new(0xF9, "SBC".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::sbc, 4, 3)),
+        None,
+        None,
+        None,
+        Some(OpCode::new(0xFD, "SBC".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::sbc, 4, 3)),
+        Some(OpCode::new(0xFE, "INC".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::inc, 7, 3)),
+        None,
+    ];
+}
+
+impl CPU {
+    // Official addressing functions
+    fn addr_zpg(&mut self, _subcycle: u8) -> bool {
+        self.store.addr = self.bus.mem_read(self.pc) as u16;
+        self.pc = self.pc.wrapping_add(1);
+        true
     }
 
-    pub fn handle_tay(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let reg_acc: u8 = self.get_register(Register::Accumulator);
-        self.set_register_with_flags(Register::YIndex, reg_acc);
-    }
-
-    pub fn handle_tsx(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let stk_ptr: u8 = self.get_stack_pointer();
-        self.set_register_with_flags(Register::XIndex, stk_ptr);
-    }
-
-    pub fn handle_txa(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let reg_x: u8 = self.get_register(Register::XIndex);
-        self.set_register_with_flags(Register::Accumulator, reg_x);
-    }
-
-    pub fn handle_txs(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let reg_x: u8 = self.get_register(Register::XIndex);
-        self.set_stack_pointer(reg_x);
-    }
-
-    pub fn handle_tya(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let reg_y: u8 = self.get_register(Register::YIndex);
-        self.set_register_with_flags(Register::Accumulator, reg_y);
-    }
-
-    pub fn handle_clc(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.set_flag(Flag::Carry, false);
-    }
-
-    pub fn handle_cld(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.set_flag(Flag::DecimalMode, false);
-    }
-
-    pub fn handle_cli(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.set_flag(Flag::InterruptDisable, false);
-    }
-
-    pub fn handle_clv(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.set_flag(Flag::Overflow, false);
-    }
-
-    pub fn handle_sec(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.set_flag(Flag::Carry, true);
-    }
-
-    pub fn handle_sed(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.set_flag(Flag::DecimalMode, true);
-    }
-
-    pub fn handle_sei(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.set_flag(Flag::InterruptDisable, true);
-    }
-
-    pub fn handle_lda(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let op: u16 = self.get_operand(mode);
-        let mut data: u16 = op;
-        if mode != AddressingMode::Immediate {
-            data = self.memory_read_u8(op) as u16;
+    fn addr_zpx(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.addr_zpg(subcycle);
+                false
+            }
+            1 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                self.store.addr = add_mod_8(self.store.addr as u8, self.x) as u16;
+                true
+            }
+            _ => unreachable!(),
         }
-        self.set_register_with_flags(Register::Accumulator, data as u8);
     }
 
-    pub fn handle_ldx(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let op: u16 = self.get_operand(mode);
-        let mut data: u16 = op;
-        if mode != AddressingMode::Immediate {
-            data = self.memory_read_u8(op) as u16;
+    fn addr_zpy(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.addr_zpg(subcycle);
+                false
+            }
+            1 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                self.store.addr = add_mod_8(self.store.addr as u8, self.y) as u16;
+                true
+            }
+            _ => unreachable!(),
         }
-        self.set_register_with_flags(Register::XIndex, data as u8);
     }
 
-    pub fn handle_ldy(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let op: u16 = self.get_operand(mode);
-        let mut data: u16 = op;
-        if mode != AddressingMode::Immediate {
-            data = self.memory_read_u8(op) as u16;
+    fn addr_abs(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                true
+            }
+            _ => unreachable!(),
         }
-        self.set_register_with_flags(Register::YIndex, data as u8);
     }
 
-    pub fn handle_sta(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let data: u8 = self.get_register(Register::Accumulator);
-        let addr: u16 = self.get_operand(mode);
-        self.memory_write_u8(addr, data);
-    }
-
-    pub fn handle_stx(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let data: u8 = self.get_register(Register::XIndex);
-        let addr: u16 = self.get_operand(mode);
-        self.memory_write_u8(addr, data);
-    }
-
-    pub fn handle_sty(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let data: u8 = self.get_register(Register::YIndex);
-        let addr: u16 = self.get_operand(mode);
-        self.memory_write_u8(addr, data);
-    }
-
-    pub fn handle_pha(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.stack_push_u8(self.get_register(Register::Accumulator));
-    }
-
-    pub fn handle_php(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.stack_push_u8(self.get_flags() | BF);
-    }
-
-    pub fn handle_pla(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let data: u8 = self.stack_pop_u8();
-        self.set_register_with_flags(Register::Accumulator, data);
-    }
-
-    pub fn handle_plp(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let flags: u8 = self.stack_pop_u8();
-        self.set_flag(Flag::Carry, flags & CF != 0);
-        self.set_flag(Flag::Zero, flags & ZF != 0);
-        self.set_flag(Flag::InterruptDisable, flags & IF != 0);
-        self.set_flag(Flag::DecimalMode, flags & DF != 0);
-        self.set_flag(Flag::Overflow, flags & VF != 0);
-        self.set_flag(Flag::Negative, flags & NF != 0);
-    }
-
-    pub fn handle_and(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let data: u8 = self.get_data(mode);
-        let res: u8 = self.get_register(Register::Accumulator) & data as u8;
-        self.set_register_with_flags(Register::Accumulator, res);
-    }
-
-    pub fn handle_ora(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let data: u8 = self.get_data(mode);
-        let res: u8 = self.get_register(Register::Accumulator) | data;
-        self.set_register_with_flags(Register::Accumulator, res);
-    }
-
-    pub fn handle_eor(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let data: u8 = self.get_data(mode);
-        let res: u8 = self.get_register(Register::Accumulator) ^ data;
-        self.set_register_with_flags(Register::Accumulator, res);
-    }
-
-    fn shift(&mut self, mode: AddressingMode, left: bool, with_carry: bool) {
-        let cf: bool = self.get_flag(Flag::Carry);
-        if mode == AddressingMode::Accumulator {
-            let mut reg_acc: u8 = self.get_register(Register::Accumulator);
-            if left {
-                self.set_flag(Flag::Carry, (reg_acc & BIT_7) != 0);
-                reg_acc <<= 1;
-                if with_carry && cf {
-                    reg_acc |= BIT_0;
+    fn addr_abx(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                self.store.data = self.store.lo;
+                self.store.lo = self.store.lo.wrapping_add(self.x);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                
+                self.page_crossed = self.store.data > self.store.lo;
+                let write_ins = match self.ins.unwrap().code {
+                    0x9D | 0x1E | 0x3E | 0x5E | 0x7E | 0xDE | 0xFE => true,
+                    _ => false,
+                };
+                !(self.page_crossed || write_ins)
+            }
+            2 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                if self.page_crossed {
+                    self.store.addr = self.store.addr.wrapping_add(0x100);
                 }
-            } else {
-                self.set_flag(Flag::Carry, (reg_acc & BIT_0) != 0);
-                reg_acc >>= 1;
-                if with_carry && cf {
-                    reg_acc |= BIT_7;
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn addr_aby(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                self.store.data = self.store.lo;
+                self.store.lo = self.store.lo.wrapping_add(self.y);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                
+                self.page_crossed = self.store.data > self.store.lo;
+                let write_ins = match self.ins.unwrap().code {
+                    0x99 => true,
+                    _ => false,
+                };
+                !(self.page_crossed || write_ins)
+            }
+            2 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                if self.page_crossed {
+                    self.store.addr = self.store.addr.wrapping_add(0x100);
+                }
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn addr_inx(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.data = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                let _ = self.bus.mem_read(self.store.data as u16);
+                self.store.data = self.store.data.wrapping_add(self.x);
+                false
+            }
+            2 => {
+                self.store.lo = self.bus.mem_read(self.store.data as u16);
+                false
+            }
+            3 => {
+                self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn addr_iny(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.data = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.lo = self.bus.mem_read(self.store.data as u16);
+                false
+            }
+            2 => {
+                self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
+                self.store.data = self.store.lo;
+                self.store.lo = self.store.lo.wrapping_add(self.y);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                
+                self.page_crossed = self.store.data > self.store.lo;
+                let write_ins = match self.ins.unwrap().code {
+                    0x91 => true,
+                    _ => false,
+                };
+                !(self.page_crossed || write_ins)
+            }
+            3 => {
+                let _ = self.bus.mem_read(self.store.addr);
+                if self.page_crossed {
+                    self.store.addr = self.store.addr.wrapping_add(0x100);
+                }
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    // Official execute functions
+    fn brk(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                let _ = self.bus.mem_read(self.pc);
+                if self.software_interrupt {
+                    self.pc = self.pc.wrapping_add(1);
+                }
+                false
+            }
+            1 => {
+                self.stack_push(hi_byte(self.pc));
+                false
+            }
+            2 => {
+                self.stack_push(lo_byte(self.pc));
+                false
+            }
+            3 => {
+                let p = if self.software_interrupt {
+                    self.p.bits() | Flags::BREAK.bits()
+                } else {
+                    self.p.bits() & !Flags::BREAK.bits()
+                };
+                self.stack_push(p);
+                false
+            }
+            4 => {
+                self.p.insert(Flags::INTERRUPT_DISABLE);
+                match self.store.vector {
+                    NMI_VECTOR => {
+                        self.nmi_pending = false;
+                    }
+                    IRQ_VECTOR => {
+                        if self.hijacked { self.irq_pending = false };
+                    }
+                    _ => unreachable!()
+                }
+                self.store.lo = self.bus.mem_read(self.store.vector);
+                false
+            }
+            5 => {
+                self.store.hi = self.bus.mem_read(self.store.vector + 1);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.pc = self.store.addr;
+
+                self.software_interrupt = false;
+                self.servicing_interrupt = false;
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn ora(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a |= self.store.data;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn asl(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.shift(true, false, subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn php(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                self.stack_push(self.p.bits() | Flags::BREAK.bits());
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn bpl(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::NEGATIVE), subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn clc(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.p.remove(Flags::CARRY);
+        true
+    }
+
+    fn jsr(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                self.stack_push(hi_byte(self.pc));
+                false
+            }
+            3 => {
+                self.stack_push(lo_byte(self.pc));
+                false
+            }
+            4 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn and(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a &= self.store.data;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn bit(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        let res = self.a & self.store.data;
+        self.p.set(Flags::ZERO, res == 0);
+        self.p.set(Flags::OVERFLOW, bit_6(self.store.data) != 0);
+        self.p.set(Flags::NEGATIVE, bit_7(self.store.data) != 0);
+        true
+    }
+
+    fn rol(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.shift(true, true, subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn plp(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                let flags = Flags::from_bits_truncate(self.stack_pop());
+                self.p.set(Flags::CARRY, flags.contains(Flags::CARRY));
+                self.p.set(Flags::ZERO, flags.contains(Flags::ZERO));
+                self.p.set(
+                    Flags::INTERRUPT_DISABLE,
+                    flags.contains(Flags::INTERRUPT_DISABLE),
+                );
+                self.p
+                    .set(Flags::DECIMAL_MODE, flags.contains(Flags::DECIMAL_MODE));
+                self.p.set(Flags::OVERFLOW, flags.contains(Flags::OVERFLOW));
+                self.p.set(Flags::NEGATIVE, flags.contains(Flags::NEGATIVE));
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn bmi(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::NEGATIVE), subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn sec(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.p.insert(Flags::CARRY);
+        true
+    }
+
+    fn rti(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                let flags = Flags::from_bits_truncate(self.stack_pop());
+                self.p.set(Flags::CARRY, flags.contains(Flags::CARRY));
+                self.p.set(Flags::ZERO, flags.contains(Flags::ZERO));
+                self.p.set(
+                    Flags::INTERRUPT_DISABLE,
+                    flags.contains(Flags::INTERRUPT_DISABLE),
+                );
+                self.p
+                    .set(Flags::DECIMAL_MODE, flags.contains(Flags::DECIMAL_MODE));
+                self.p.set(Flags::OVERFLOW, flags.contains(Flags::OVERFLOW));
+                self.p.set(Flags::NEGATIVE, flags.contains(Flags::NEGATIVE));
+                false
+            }
+            3 => {
+                self.pc = u16::from_le_bytes([self.stack_pop(), hi_byte(self.pc)]);
+                false
+            }
+            4 => {
+                self.pc = u16::from_le_bytes([lo_byte(self.pc), self.stack_pop()]);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn eor(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a ^= self.store.data;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn lsr(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.shift(false, false, subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn pha(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                self.stack_push(self.a);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn jmp(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.lo = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                false
+            }
+            1 => {
+                self.store.hi = self.bus.mem_read(self.pc);
+                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                if self.ins.unwrap().mode == AddressingMode::ABS {
+                    self.pc = self.store.addr;
+                    true
+                } else {
+                    self.pc = self.pc.wrapping_add(1);
+                    false
                 }
             }
-            self.set_register_with_flags(Register::Accumulator, reg_acc);
-        } else {
-            let op: u16 = self.get_operand(mode);
-            let mut data: u8 = self.memory_read_u8(op);
-            if left {
-                self.set_flag(Flag::Carry, (data & BIT_7) != 0);
-                data <<= 1;
-                if with_carry && cf {
-                    data |= BIT_0
-                }
-            } else {
-                self.set_flag(Flag::Carry, (data & BIT_0) != 0);
-                data >>= 1;
-                if with_carry && cf {
-                    data |= BIT_7
-                }
+            2 => {
+                self.store.lo = self.bus.mem_read(self.store.addr);
+                false
             }
-            self.memory_write_u8(op, data);
-            self.update_op_flags(data);
+            3 => {
+                self.store.addr = u16::from_le_bytes([
+                    lo_byte(self.store.addr.wrapping_add(1)),
+                    hi_byte(self.store.addr),
+                ]);
+                self.store.hi = self.bus.mem_read(self.store.addr);
+                self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                true
+            }
+            _ => unreachable!(),
         }
     }
 
-    pub fn handle_asl(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        self.shift(mode, true, false);
-    }
-
-    pub fn handle_lsr(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        self.shift(mode, false, false);
-    }
-
-    pub fn handle_rol(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        self.shift(mode, true, true);
-    }
-
-    pub fn handle_ror(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        self.shift(mode, false, true);
-    }
-
-    fn add(&mut self, num1: u8, mut num2: u8, twos_complement: bool) -> u8 {
-        let cbit: u8;
-        if self.get_flag(Flag::Carry) {
-            cbit = 1;
-        } else {
-            cbit = 0;
+    fn bvc(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::OVERFLOW), subcycle),
+            _ => unreachable!(),
         }
+    }
 
-        let mut res: u16;
-        if twos_complement {
-            num2 = !num2;
-            res = num1 as u16 + num2 as u16 + cbit as u16;
+    fn cli(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.p.remove(Flags::INTERRUPT_DISABLE);
+        true
+    }
+
+    fn rts(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                self.store.lo = self.stack_pop();
+                false
+            }
+            3 => {
+                self.store.hi = self.stack_pop();
+                self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                false
+            }
+            4 => {
+                let _ = self.bus.mem_read(self.pc);
+                self.pc = self.pc.wrapping_add(1);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn adc(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a = self.add(self.a, self.store.data, false);
+        self.set_nz(self.a);
+        true
+    }
+
+    fn ror(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.shift(false, true, subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn pla(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                let _ = self.get_operand();
+                false
+            }
+            1 => {
+                let _ = self.stack_peek();
+                false
+            }
+            2 => {
+                self.a = self.stack_pop();
+                self.set_nz(self.a);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn bvs(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::OVERFLOW), subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn sei(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.p.insert(Flags::INTERRUPT_DISABLE);
+        true
+    }
+
+    fn sta(&mut self, _subcycle: u8) -> bool {
+        self.bus.mem_write(self.store.addr, self.a);
+        true
+    }
+
+    fn sty(&mut self, _subcycle: u8) -> bool {
+        self.bus.mem_write(self.store.addr, self.y);
+        true
+    }
+
+    fn stx(&mut self, _subcycle: u8) -> bool {
+        self.bus.mem_write(self.store.addr, self.x);
+        true
+    }
+
+    fn dey(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.y = self.y.wrapping_sub(1);
+        self.set_nz(self.y);
+        true
+    }
+
+    fn txa(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.a = self.x;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn bcc(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::CARRY), subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn tya(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.a = self.y;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn txs(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.sp = self.x;
+        true
+    }
+
+    fn ldy(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.y = self.store.data;
+        self.set_nz(self.y);
+        true
+    }
+
+    fn lda(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a = self.store.data;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn ldx(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.x = self.store.data;
+        self.set_nz(self.x);
+        true
+    }
+
+    fn tay(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.y = self.a;
+        self.set_nz(self.y);
+        true
+    }
+
+    fn tax(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.a;
+        self.set_nz(self.x);
+        true
+    }
+
+    fn bcs(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::CARRY), subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn clv(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.p.remove(Flags::OVERFLOW);
+        true
+    }
+
+    fn tsx(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.sp;
+        self.set_nz(self.x);
+        true
+    }
+
+    fn cpy(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.compare(self.y, self.store.data);
+        true
+    }
+
+    fn cmp(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.compare(self.a, self.store.data);
+        true
+    }
+
+    fn dec(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.data = self.get_operand();
+                false
+            }
+            1 => {
+                self.set_result();
+                self.store.data = self.store.data.wrapping_sub(1);
+                false
+            }
+            2 => {
+                self.set_result();
+                self.set_nz(self.store.data);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn iny(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.y = self.y.wrapping_add(1);
+        self.set_nz(self.y);
+        true
+    }
+
+    fn dex(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.x.wrapping_sub(1);
+        self.set_nz(self.x);
+        true
+    }
+
+    fn bne(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(!self.p.contains(Flags::ZERO), subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn cld(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.p.remove(Flags::DECIMAL_MODE);
+        true
+    }
+
+    fn cpx(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.compare(self.x, self.store.data);
+        true
+    }
+
+    fn sbc(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a = self.add(self.a, self.store.data, true);
+        self.set_nz(self.a);
+        true
+    }
+
+    fn inc(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.data = self.get_operand();
+                false
+            }
+            1 => {
+                self.set_result();
+                self.store.data = self.store.data.wrapping_add(1);
+                false
+            }
+            2 => {
+                self.set_result();
+                self.set_nz(self.store.data);
+                true
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn inx(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.x = self.x.wrapping_add(1);
+        self.set_nz(self.x);
+        true
+    }
+
+    fn nop(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        true
+    }
+
+    fn beq(&mut self, subcycle: u8) -> bool {
+        match subcycle {
+            0 | 1 | 2 => self.branch(self.p.contains(Flags::ZERO), subcycle),
+            _ => unreachable!(),
+        }
+    }
+
+    fn sed(&mut self, _subcycle: u8) -> bool {
+        let _ = self.get_operand();
+        self.p.insert(Flags::DECIMAL_MODE);
+        true
+    }
+
+    // Helpers
+    fn add(&mut self, n: u8, mut m: u8, subtract: bool) -> u8 {
+        let cbit = self.p.contains(Flags::CARRY) as u8;
+
+        let mut res;
+        if subtract {
+            m = !m;
+            res = n as u16 + m as u16 + cbit as u16;
             if (res as i8) < 0 {
-                self.set_flag(Flag::Carry, false);
+                self.p.remove(Flags::CARRY);
             } else {
-                self.set_flag(Flag::Carry, true);
+                self.p.insert(Flags::CARRY);
             }
         } else {
-            res = num1 as u16 + num2 as u16 + cbit as u16;
+            res = n as u16 + m as u16 + cbit as u16;
             if res > 0xff {
-                self.set_flag(Flag::Carry, true);
+                self.p.insert(Flags::CARRY);
             } else {
-                self.set_flag(Flag::Carry, false);
+                self.p.remove(Flags::CARRY);
             }
         }
 
-        res &= LOWER_BYTE;
-        if (num1 ^ res as u8) & (num2 ^ res as u8) & BIT_7 != 0 {
-            self.set_flag(Flag::Overflow, true);
+        res &= 0xFF;
+        if bit_7((n ^ res as u8) & (m ^ res as u8)) != 0 {
+            self.p.insert(Flags::OVERFLOW);
         } else {
-            self.set_flag(Flag::Overflow, false);
+            self.p.remove(Flags::OVERFLOW);
         }
 
         res as u8
     }
 
-    pub fn handle_adc(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let reg_acc: u8 = self.get_register(Register::Accumulator);
-        let data: u8 = self.get_data(mode);
-        let sum: u8 = self.add(reg_acc, data, false);
-        self.set_register_with_flags(Register::Accumulator, sum);
-    }
-
-    pub fn handle_sbc(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let reg_acc: u8 = self.get_register(Register::Accumulator);
-        let data: u8 = self.get_data(mode);
-        let difference: u8 = self.add(reg_acc, data, true);
-        self.set_register_with_flags(Register::Accumulator, difference);
-    }
-
-    pub fn handle_inc(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let op: u16 = self.get_operand(mode);
-        let mut data: u8 = self.memory_read_u8(op);
-        if data == 0xff {
-            data = 0;
+    fn shift(&mut self, left: bool, with_carry: bool, subcycle: u8) -> bool {
+        let cf = self.p.contains(Flags::CARRY);
+        if self.ins.unwrap().mode == AddressingMode::ACC {
+            let _ = self.get_operand();
+            self.a = self.shift_data(left, with_carry, cf, self.a);
+            self.set_nz(self.a);
+            true
         } else {
-            data += 1;
-        }
-        self.memory_write_u8(op, data);
-        self.update_op_flags(data);
-    }
-
-    pub fn handle_inx(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let mut reg_x: u8 = self.get_register(Register::XIndex);
-        if reg_x == 0xff {
-            reg_x = 0;
-        } else {
-            reg_x += 1;
-        }
-        self.set_register_with_flags(Register::XIndex, reg_x);
-    }
-
-    pub fn handle_iny(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let mut reg_y: u8 = self.get_register(Register::YIndex);
-        if reg_y == 0xff {
-            reg_y = 0;
-        } else {
-            reg_y += 1;
-        }
-        self.set_register_with_flags(Register::YIndex, reg_y);
-    }
-
-    pub fn handle_dec(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let op: u16 = self.get_operand(mode);
-        let mut data: u8 = self.memory_read_u8(op);
-        if data == 0 {
-            data = 0xff;
-        } else {
-            data -= 1;
-        }
-        self.memory_write_u8(op, data);
-        self.update_op_flags(data);
-    }
-
-    pub fn handle_dex(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let mut reg_x: u8 = self.get_register(Register::XIndex);
-        if reg_x == 0 {
-            reg_x = 0xff;
-        } else {
-            reg_x -= 1;
-        }
-        self.set_register_with_flags(Register::XIndex, reg_x);
-    }
-
-    pub fn handle_dey(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let mut reg_y: u8 = self.get_register(Register::YIndex);
-        if reg_y == 0 {
-            reg_y = 0xff;
-        } else {
-            reg_y -= 1;
-        }
-        self.set_register_with_flags(Register::YIndex, reg_y);
-    }
-
-    pub fn handle_brk(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let pc: u16 = self.get_program_counter();
-        self.set_program_counter(add_mod_16bit(pc, 1)); // implied padding byte
-        self.stack_push_u16(self.get_program_counter());
-        self.handle_php(mode, cycle);
-        let irq: u16 = self.memory_read_u16(IRQ_VECTOR);
-        self.set_program_counter(irq);
-    }
-
-    pub fn handle_nop(&mut self, _: AddressingMode, cycle: &mut u8) {}
-
-    fn cmp(&mut self, num1: u8, num2: u8) {
-        let tcnum2: u8 = add_mod_8bit(!num2, 1);
-        let diff: u8 = add_mod_8bit(num1, tcnum2);
-        self.update_op_flags(diff);
-        if num1 >= num2 {
-            self.set_flag(Flag::Carry, true);
-        } else {
-            self.set_flag(Flag::Carry, false);
-        }
-    }
-
-    pub fn handle_cmp(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let reg_acc: u8 = self.get_register(Register::Accumulator);
-        let data: u8 = self.get_data(mode);
-        self.cmp(reg_acc, data);
-    }
-
-    pub fn handle_cpx(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let reg_x: u8 = self.get_register(Register::XIndex);
-        let data: u8 = self.get_data(mode);
-        self.cmp(reg_x, data);
-    }
-
-    pub fn handle_cpy(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let reg_y: u8 = self.get_register(Register::YIndex);
-        let data: u8 = self.get_data(mode);
-        self.cmp(reg_y, data);
-    }
-
-    pub fn handle_jmp(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let op: u16;
-        if mode == AddressingMode::Absolute {
-            op = self.get_operand(mode);
-            self.set_program_counter(op);
-        } else {
-            let pc: u16 = self.get_program_counter();
-            let indirect: u16 = self.memory_read_u16(pc);
-            self.set_program_counter(add_mod_16bit(pc, 2));
-            if indirect & LOWER_BYTE == LOWER_BYTE {
-                let lower_byte: u8 = self.memory_read_u8(indirect);
-                let upper_byte: u8 = self.memory_read_u8(indirect & UPPER_BYTE);
-                op = ((upper_byte as u16) << 8) | (lower_byte as u16);
-                self.set_program_counter(op);
-            } else {
-                op = self.memory_read_u16(indirect);
-                self.set_program_counter(op);
+            match subcycle {
+                0 => {
+                    self.store.data = self.get_operand();
+                    false
+                }
+                1 => {
+                    self.set_result();
+                    self.store.data = self.shift_data(left, with_carry, cf, self.store.data);
+                    false
+                }
+                2 => {
+                    self.set_result();
+                    self.set_nz(self.store.data);
+                    true
+                }
+                _ => unreachable!(),
             }
         }
     }
 
-    pub fn handle_jsr(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let op: u16 = self.get_operand(AddressingMode::Absolute);
-        self.stack_push_u16(self.get_program_counter() - 1);
-        self.set_program_counter(op);
+    fn shift_data(&mut self, left: bool, with_carry: bool, cf: bool, mut data: u8) -> u8 {
+        if left {
+            self.p.set(Flags::CARRY, bit_7(data) != 0);
+            data <<= 1;
+            if with_carry && cf {
+                data |= 1;
+            }
+        } else {
+            self.p.set(Flags::CARRY, bit_0(data) != 0);
+            data >>= 1;
+            if with_carry && cf {
+                data |= 128;
+            }
+        }
+        data
     }
 
-    pub fn handle_rti(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let flags: u8 = self.stack_pop_u8();
-        self.set_flag(Flag::Carry, flags & CF != 0);
-        self.set_flag(Flag::Zero, flags & ZF != 0);
-        self.set_flag(Flag::InterruptDisable, flags & IF != 0);
-        self.set_flag(Flag::DecimalMode, flags & DF != 0);
-        self.set_flag(Flag::Overflow, flags & VF != 0);
-        self.set_flag(Flag::Negative, flags & NF != 0);
-        let pc: u16 = self.stack_pop_u16();
-        self.set_program_counter(pc);
+    fn compare(&mut self, n: u8, m: u8) {
+        self.set_nz(n.wrapping_sub(m));
+        self.p.set(Flags::CARRY, n >= m);
     }
 
-    pub fn handle_rts(&mut self, _: AddressingMode, cycle: &mut u8) {
-        let pc: u16 = self.stack_pop_u16();
-        self.set_program_counter(add_mod_16bit(pc, 1));
-    }
-
-    fn branch(&mut self, jmp: bool) {
-        let op: i8 = self.get_operand(AddressingMode::Relative) as i8;
-        if jmp {
-            let res: i64 = (self.get_program_counter() as i64) + (op as i64);
-            self.set_program_counter(res as u16);
+    fn branch(&mut self, jmp: bool, subcycle: u8) -> bool {
+        match subcycle {
+            0 => {
+                self.store.offset = self.get_operand() as i8;
+                !jmp
+            }
+            1 => {
+                let _ = self.bus.mem_read(self.pc);
+                self.store.addr = self.pc.wrapping_add(self.store.offset as i16 as u16);
+                self.pc = u16::from_le_bytes([lo_byte(self.store.addr), hi_byte(self.pc)]);
+                hi_byte(self.pc) == hi_byte(self.store.addr)
+            }
+            2 => {
+                let _ = self.bus.mem_read(self.pc);
+                self.pc = self.store.addr;
+                true
+            }
+            _ => unreachable!(),
         }
     }
 
-    pub fn handle_bcc(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(!self.get_flag(Flag::Carry));
+    fn get_operand(&mut self) -> u8 {
+        match self.ins.unwrap().mode {
+            AddressingMode::IMP | AddressingMode::ACC => self.bus.mem_read(self.pc),
+            AddressingMode::IMM | AddressingMode::REL => {
+                self.pc = self.pc.wrapping_add(1);
+                self.bus.mem_read(self.pc.wrapping_sub(1))
+            }
+            _ => self.bus.mem_read(self.store.addr),
+        }
     }
 
-    pub fn handle_bcs(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(self.get_flag(Flag::Carry));
+    fn set_result(&mut self) {
+        match self.ins.unwrap().mode {
+            AddressingMode::ACC => {
+                self.a = self.store.data;
+            }
+            _ => self.bus.mem_write(self.store.addr, self.store.data),
+        }
     }
 
-    pub fn handle_beq(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(self.get_flag(Flag::Zero));
+    fn set_nz(&mut self, data: u8) {
+        self.p.set(Flags::ZERO, data == 0);
+        self.p.set(Flags::NEGATIVE, bit_7(data) != 0);
     }
-
-    pub fn handle_bit(&mut self, mode: AddressingMode, cycle: &mut u8) {
-        let reg_acc: u8 = self.get_register(Register::Accumulator);
-        let data: u8 = self.get_data(mode);
-        self.set_flag(Flag::Overflow, data & BIT_6 != 0);
-        self.set_flag(Flag::Negative, data & BIT_7 != 0);
-        self.set_flag(Flag::Zero, data & reg_acc == 0);
-    }
-
-    pub fn handle_bmi(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(self.get_flag(Flag::Negative));
-    }
-
-    pub fn handle_bne(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(!self.get_flag(Flag::Zero));
-    }
-
-    pub fn handle_bpl(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(!self.get_flag(Flag::Negative));
-    }
-
-    pub fn handle_bvc(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(!self.get_flag(Flag::Overflow));
-    }
-
-    pub fn handle_bvs(&mut self, _: AddressingMode, cycle: &mut u8) {
-        self.branch(self.get_flag(Flag::Overflow));
-    }
-}
-
-lazy_static! {
-    pub static ref opcodes_list: Vec<OpCode> = vec![
-    // CPU
-        // Transfer
-        OpCode::new(0xaa, "TAX".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_tax),
-        OpCode::new(0xa8, "TAY".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_tay),
-        OpCode::new(0xba, "TSX".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_tsx),
-        OpCode::new(0x8a, "TXA".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_txa),
-        OpCode::new(0x9a, "TXS".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_txs),
-        OpCode::new(0x98, "TYA".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_tya),
-        // Flags
-        OpCode::new(0x18, "CLC".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_clc),
-        OpCode::new(0xd8, "CLD".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_cld),
-        OpCode::new(0x58, "CLI".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_cli),
-        OpCode::new(0xb8, "CLV".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_clv),
-        OpCode::new(0x38, "SEC".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_sec),
-        OpCode::new(0xf8, "SED".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_sed),
-        OpCode::new(0x78, "SEI".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_sei),
-
-    // Memory
-        // Load
-        OpCode::new(0xa9, "LDA".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_lda),
-        OpCode::new(0xa5, "LDA".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_lda),
-        OpCode::new(0xb5, "LDA".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_lda),
-        OpCode::new(0xad, "LDA".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_lda),
-        OpCode::new(0xbd, "LDA".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_lda),
-        OpCode::new(0xb9, "LDA".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_lda),
-        OpCode::new(0xa1, "LDA".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_lda),
-        OpCode::new(0xb1, "LDA".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY, NNES::handle_lda),
-        OpCode::new(0xa2, "LDX".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_ldx),
-        OpCode::new(0xa6, "LDX".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_ldx),
-        OpCode::new(0xb6, "LDX".to_string(), 2, 4, AddressingMode::ZeroPageY, NNES::handle_ldx),
-        OpCode::new(0xae, "LDX".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_ldx),
-        OpCode::new(0xbe, "LDX".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_ldx),
-        OpCode::new(0xa0, "LDY".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_ldy),
-        OpCode::new(0xa4, "LDY".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_ldy),
-        OpCode::new(0xb4, "LDY".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_ldy),
-        OpCode::new(0xac, "LDY".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_ldy),
-        OpCode::new(0xbc, "LDY".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_ldy),
-        // Store
-        OpCode::new(0x85, "STA".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_sta),
-        OpCode::new(0x95, "STA".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_sta),
-        OpCode::new(0x8d, "STA".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_sta),
-        OpCode::new(0x9d, "STA".to_string(), 3, 5, AddressingMode::AbsoluteX, NNES::handle_sta),
-        OpCode::new(0x99, "STA".to_string(), 3, 5, AddressingMode::AbsoluteY, NNES::handle_sta),
-        OpCode::new(0x81, "STA".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_sta),
-        OpCode::new(0x91, "STA".to_string(), 2, 6, AddressingMode::IndirectY, NNES::handle_sta),
-        OpCode::new(0x86, "STX".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_stx),
-        OpCode::new(0x96, "STX".to_string(), 2, 4, AddressingMode::ZeroPageY, NNES::handle_stx),
-        OpCode::new(0x8e, "STX".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_stx),
-        OpCode::new(0x84, "STY".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_sty),
-        OpCode::new(0x94, "STY".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_sty),
-        OpCode::new(0x8c, "STY".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_sty),
-        // Stack
-        OpCode::new(0x48, "PHA".to_string(), 1, 3, AddressingMode::Implied, NNES::handle_pha),
-        OpCode::new(0x08, "PHP".to_string(), 1, 3, AddressingMode::Implied, NNES::handle_php),
-        OpCode::new(0x68, "PLA".to_string(), 1, 4, AddressingMode::Implied, NNES::handle_pla),
-        OpCode::new(0x28, "PLP".to_string(), 1, 4, AddressingMode::Implied, NNES::handle_plp),
-
-    // Binary
-        // AND
-        OpCode::new(0x29, "AND".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_and),
-        OpCode::new(0x25, "AND".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_and),
-        OpCode::new(0x35, "AND".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_and),
-        OpCode::new(0x2d, "AND".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_and),
-        OpCode::new(0x3d, "AND".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_and),
-        OpCode::new(0x39, "AND".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_and),
-        OpCode::new(0x21, "AND".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_and),
-        OpCode::new(0x31, "AND".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY, NNES::handle_and),
-        // OR
-        OpCode::new(0x09, "ORA".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_ora),
-        OpCode::new(0x05, "ORA".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_ora),
-        OpCode::new(0x15, "ORA".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_ora),
-        OpCode::new(0x0d, "ORA".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_ora),
-        OpCode::new(0x1d, "ORA".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_ora),
-        OpCode::new(0x19, "ORA".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_ora),
-        OpCode::new(0x01, "ORA".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_ora),
-        OpCode::new(0x11, "ORA".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY, NNES::handle_ora),
-        // XOR
-        OpCode::new(0x49, "EOR".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_eor),
-        OpCode::new(0x45, "EOR".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_eor),
-        OpCode::new(0x55, "EOR".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_eor),
-        OpCode::new(0x4d, "EOR".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_eor),
-        OpCode::new(0x5d, "EOR".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_eor),
-        OpCode::new(0x59, "EOR".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_eor),
-        OpCode::new(0x41, "EOR".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_eor),
-        OpCode::new(0x51, "EOR".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY, NNES::handle_eor),
-        // SAL
-        OpCode::new(0x0a, "ASL".to_string(), 1, 2, AddressingMode::Accumulator, NNES::handle_asl),
-        OpCode::new(0x06, "ASL".to_string(), 2, 5, AddressingMode::ZeroPage, NNES::handle_asl),
-        OpCode::new(0x16, "ASL".to_string(), 2, 6, AddressingMode::ZeroPageX, NNES::handle_asl),
-        OpCode::new(0x0e, "ASL".to_string(), 3, 6, AddressingMode::Absolute, NNES::handle_asl),
-        OpCode::new(0x1e, "ASL".to_string(), 3, 7, AddressingMode::AbsoluteX, NNES::handle_asl),
-        // SHR
-        OpCode::new(0x4a, "LSR".to_string(), 1, 2, AddressingMode::Accumulator, NNES::handle_lsr),
-        OpCode::new(0x46, "LSR".to_string(), 2, 5, AddressingMode::ZeroPage, NNES::handle_lsr),
-        OpCode::new(0x56, "LSR".to_string(), 2, 6, AddressingMode::ZeroPageX, NNES::handle_lsr),
-        OpCode::new(0x4e, "LSR".to_string(), 3, 6, AddressingMode::Absolute, NNES::handle_lsr),
-        OpCode::new(0x5e, "LSR".to_string(), 3, 7, AddressingMode::AbsoluteX, NNES::handle_lsr),
-        // RCL
-        OpCode::new(0x2a, "ROL".to_string(), 1, 2, AddressingMode::Accumulator, NNES::handle_rol),
-        OpCode::new(0x26, "ROL".to_string(), 2, 5, AddressingMode::ZeroPage, NNES::handle_rol),
-        OpCode::new(0x36, "ROL".to_string(), 2, 6, AddressingMode::ZeroPageX, NNES::handle_rol),
-        OpCode::new(0x2e, "ROL".to_string(), 3, 6, AddressingMode::Absolute, NNES::handle_rol),
-        OpCode::new(0x3e, "ROL".to_string(), 3, 7, AddressingMode::AbsoluteX, NNES::handle_rol),
-        // RCR
-        OpCode::new(0x6a, "ROR".to_string(), 1, 2, AddressingMode::Accumulator, NNES::handle_ror),
-        OpCode::new(0x66, "ROR".to_string(), 2, 5, AddressingMode::ZeroPage, NNES::handle_ror),
-        OpCode::new(0x76, "ROR".to_string(), 2, 6, AddressingMode::ZeroPageX, NNES::handle_ror),
-        OpCode::new(0x6e, "ROR".to_string(), 3, 6, AddressingMode::Absolute, NNES::handle_ror),
-        OpCode::new(0x7e, "ROR".to_string(), 3, 7, AddressingMode::AbsoluteX, NNES::handle_ror),
-
-    // Arithmetic
-        // ADC
-        OpCode::new(0x69, "ADC".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_adc),
-        OpCode::new(0x65, "ADC".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_adc),
-        OpCode::new(0x75, "ADC".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_adc),
-        OpCode::new(0x6d, "ADC".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_adc),
-        OpCode::new(0x7d, "ADC".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_adc),
-        OpCode::new(0x79, "ADC".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_adc),
-        OpCode::new(0x61, "ADC".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_adc),
-        OpCode::new(0x71, "ADC".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY, NNES::handle_adc),
-        // SBC
-        OpCode::new(0xe9, "SBC".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_sbc),
-        OpCode::new(0xe5, "SBC".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_sbc),
-        OpCode::new(0xf5, "SBC".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_sbc),
-        OpCode::new(0xed, "SBC".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_sbc),
-        OpCode::new(0xfd, "SBC".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_sbc),
-        OpCode::new(0xf9, "SBC".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_sbc),
-        OpCode::new(0xe1, "SBC".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_sbc),
-        OpCode::new(0xf1, "SBC".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY, NNES::handle_sbc),
-        // INC
-        OpCode::new(0xe6, "INC".to_string(), 2, 5, AddressingMode::ZeroPage, NNES::handle_inc),
-        OpCode::new(0xf6, "INC".to_string(), 2, 6, AddressingMode::ZeroPageX, NNES::handle_inc),
-        OpCode::new(0xee, "INC".to_string(), 3, 6, AddressingMode::Absolute, NNES::handle_inc),
-        OpCode::new(0xfe, "INC".to_string(), 3, 7, AddressingMode::AbsoluteX, NNES::handle_inc),
-        OpCode::new(0xe8, "INX".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_inx),
-        OpCode::new(0xc8, "INY".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_iny),
-        // DEC
-        OpCode::new(0xc6, "DEC".to_string(), 2, 5, AddressingMode::ZeroPage, NNES::handle_dec),
-        OpCode::new(0xd6, "DEC".to_string(), 2, 6, AddressingMode::ZeroPageX, NNES::handle_dec),
-        OpCode::new(0xce, "DEC".to_string(), 3, 6, AddressingMode::Absolute, NNES::handle_dec),
-        OpCode::new(0xde, "DEC".to_string(), 3, 7, AddressingMode::AbsoluteX, NNES::handle_dec),
-        OpCode::new(0xca, "DEX".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_dex),
-        OpCode::new(0x88, "DEY".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_dey),
-
-    // Control flow
-        // Stop
-        OpCode::new(0x00, "BRK".to_string(), 1, 7, AddressingMode::Implied, NNES::handle_brk),
-        OpCode::new(0xea, "NOP".to_string(), 1, 2, AddressingMode::Implied, NNES::handle_nop),
-        // Compare
-        OpCode::new(0xc9, "CMP".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_cmp),
-        OpCode::new(0xc5, "CMP".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_cmp),
-        OpCode::new(0xd5, "CMP".to_string(), 2, 4, AddressingMode::ZeroPageX, NNES::handle_cmp),
-        OpCode::new(0xcd, "CMP".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_cmp),
-        OpCode::new(0xdd, "CMP".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteX, NNES::handle_cmp),
-        OpCode::new(0xd9, "CMP".to_string(), 3, 4/*+1 if page crossed*/, AddressingMode::AbsoluteY, NNES::handle_cmp),
-        OpCode::new(0xc1, "CMP".to_string(), 2, 6, AddressingMode::IndirectX, NNES::handle_cmp),
-        OpCode::new(0xd1, "CMP".to_string(), 2, 5/*+1 if page crossed*/, AddressingMode::IndirectY, NNES::handle_cmp),
-        OpCode::new(0xe0, "CPX".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_cpx),
-        OpCode::new(0xe4, "CPX".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_cpx),
-        OpCode::new(0xec, "CPX".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_cpx),
-        OpCode::new(0xc0, "CPY".to_string(), 2, 2, AddressingMode::Immediate, NNES::handle_cpy),
-        OpCode::new(0xc4, "CPY".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_cpy),
-        OpCode::new(0xcc, "CPY".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_cpy),
-        // Jump
-        OpCode::new(0x4c, "JMP".to_string(), 3, 3, AddressingMode::Absolute, NNES::handle_jmp),
-        OpCode::new(0x6c, "JMP".to_string(), 3, 5, AddressingMode::Indirect, NNES::handle_jmp), // 6502 bug with 0xXXFF
-        OpCode::new(0x20, "JSR".to_string(), 3, 6, AddressingMode::Absolute, NNES::handle_jsr),
-        OpCode::new(0x40, "RTI".to_string(), 1, 6, AddressingMode::Implied, NNES::handle_rti),
-        OpCode::new(0x60, "RTS".to_string(), 1, 6, AddressingMode::Implied, NNES::handle_rts),
-        // Conditionals
-        OpCode::new(0x90, "BCC".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_bcc),
-        OpCode::new(0xb0, "BCS".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_bcs),
-        OpCode::new(0xf0, "BEQ".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_beq),
-        OpCode::new(0x24, "BIT".to_string(), 2, 3, AddressingMode::ZeroPage, NNES::handle_bit),
-        OpCode::new(0x2c, "BIT".to_string(), 3, 4, AddressingMode::Absolute, NNES::handle_bit),
-        OpCode::new(0x30, "BMI".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_bmi),
-        OpCode::new(0xd0, "BNE".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_bne),
-        OpCode::new(0x10, "BPL".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_bpl),
-        OpCode::new(0x50, "BVC".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_bvc),
-        OpCode::new(0x70, "BVS".to_string(), 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, NNES::handle_bvs),
-    ];
-
-    pub static ref opcodes_map: HashMap<u8, &'static OpCode> = {
-        let mut map = HashMap::new();
-        for op in &*opcodes_list {
-            map.insert(op.code, op);
-        };
-        map
-    };
 }

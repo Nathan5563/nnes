@@ -1,60 +1,54 @@
-pub mod cpu;
-pub mod memory;
-pub mod bus;
-pub mod rom;
-pub mod ppu;
+mod cpu;
+mod ppu;
 
-use bus::Bus;
-use memory::Mem;
+use std::{rc::Rc, cell::RefCell};
 
-pub static RESET_VECTOR: u16 = 0xfffc;
-pub static IRQ_VECTOR: u16 = 0xfffe;
-pub static PROGRAM_START_PC: u16 = 0x8000;
-pub static PROGRAM_START_STATUS: u8 = 0b00100100;
+use super::Cartridge;
+use cpu::{bus::Bus, CPU};
+use ppu::PPU;
 
 pub struct NNES {
-    program_counter: u16,
-    stack_pointer: u8,
-    reg_accumulator: u8,
-    reg_xindex: u8,
-    reg_yindex: u8,
-    flags: u8,
-    bus: Bus,
+    pub master_clock: u64,
+    pub cpu: CPU,
+    pub ppu: Rc<RefCell<PPU>>,
+    // pub apu: APU,
 }
 
 impl NNES {
-    pub fn new(bus: Bus) -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
+        let ppu = Rc::new(RefCell::new(PPU::new(&cartridge)));
+        let bus = Bus::new(ppu.clone(), &cartridge);
+        let cpu = CPU::new(bus);
+        // let apu = APU::new();
+
         NNES {
-            program_counter: PROGRAM_START_PC,
-            stack_pointer: 0xfd,
-            reg_accumulator: 0,
-            reg_xindex: 0,
-            reg_yindex: 0,
-            flags: PROGRAM_START_STATUS,
-            bus: bus,
+            master_clock: 0,
+            cpu,
+            ppu,
+            // apu,
         }
     }
 
-    pub fn reset_state(&mut self) {
-        self.reset_registers();
-        self.reset_flags();
-        self.set_program_counter(self.memory_read_u16(RESET_VECTOR));
-        self.set_stack_pointer(0xfd);
+    pub fn reset(&mut self) {
+        self.cpu.reset();
     }
 
-    pub fn run_callback<F>(&mut self, mut callback: F)
-    where
-        F: FnMut(&mut NNES),
-    {
-        let mut exit: bool = false;
-        let mut cpu_cycle: u8 = 0;
-        let mut ppu_cycle: u8 = 0;
-        while !exit {
-            callback(self);
-            self.cpu_tick(&mut cpu_cycle, &mut exit);
-            self.ppu_tick(&mut ppu_cycle);
-            self.ppu_tick(&mut ppu_cycle);
-            self.ppu_tick(&mut ppu_cycle);
+    pub fn tick(&mut self) {
+        // PPU runs at master/4
+        if self.master_clock % 4 == 0 {
+            self.ppu.borrow_mut().tick();
         }
+
+        // CPU runs at master/12
+        if self.master_clock % 12 == 0 {
+            self.cpu.tick();
+        }
+
+        // // APU runs at master/24
+        // if self.master_clock % 24 == 0 {
+        //     self.apu.tick();
+        // }
+
+        self.master_clock = self.master_clock.wrapping_add(1);
     }
 }
