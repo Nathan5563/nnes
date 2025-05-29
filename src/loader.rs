@@ -12,7 +12,7 @@ const NES_MAGIC: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 
 // Currently only supports iNES file format, mapper 0.
 // Validation is not rigorous yet, so be careful with rom selection.
-pub fn validate(arg: &String) -> Result<Vec<u8>, String> {
+pub fn validate_rom(arg: &String) -> Result<Vec<u8>, String> {
     // No file
     let rom = match fs::read(arg) {
         Ok(rom) => rom,

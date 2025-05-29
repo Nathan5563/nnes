@@ -7,9 +7,16 @@ mod loader;
 mod nnes;
 mod utils;
 
-use loader::Cartridge;
+use loader::{Cartridge, validate_rom};
 use nnes::NNES;
-use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
+use sdl2::{
+    event::Event,
+    keyboard::Keycode,
+    pixels::PixelFormatEnum,
+    render::{Canvas, Texture},
+    video::Window,
+    Sdl,
+};
 use std::{env, process, thread, time::Duration};
 
 macro_rules! die {
@@ -19,76 +26,10 @@ macro_rules! die {
     };
 }
 
-// The original NTSC NES palette (64 colours).
-pub const NES_PALETTE: [(u8, u8, u8); 64] = [
-    (84, 84, 84),
-    (0, 30, 116),
-    (8, 16, 144),
-    (48, 0, 136),
-    (68, 0, 100),
-    (92, 0, 48),
-    (84, 4, 0),
-    (60, 24, 0),
-    (32, 42, 0),
-    (8, 58, 0),
-    (0, 64, 0),
-    (0, 60, 0),
-    (0, 50, 60),
-    (0, 0, 0),
-    (0, 0, 0),
-    (0, 0, 0),
-    (152, 150, 152),
-    (8, 76, 196),
-    (48, 50, 236),
-    (92, 30, 228),
-    (136, 20, 176),
-    (160, 20, 100),
-    (152, 34, 32),
-    (120, 60, 0),
-    (84, 90, 0),
-    (40, 114, 0),
-    (8, 124, 0),
-    (0, 118, 40),
-    (0, 102, 120),
-    (0, 0, 0),
-    (0, 0, 0),
-    (0, 0, 0),
-    (236, 238, 236),
-    (76, 154, 236),
-    (120, 124, 236),
-    (176, 98, 236),
-    (228, 84, 236),
-    (236, 88, 180),
-    (236, 106, 100),
-    (212, 136, 32),
-    (160, 170, 0),
-    (116, 196, 0),
-    (76, 208, 32),
-    (56, 204, 108),
-    (56, 180, 204),
-    (60, 60, 60),
-    (0, 0, 0),
-    (0, 0, 0),
-    (236, 238, 236),
-    (168, 204, 236),
-    (188, 188, 236),
-    (212, 178, 236),
-    (236, 174, 236),
-    (236, 174, 212),
-    (236, 180, 176),
-    (228, 196, 144),
-    (204, 210, 120),
-    (180, 222, 120),
-    (168, 226, 144),
-    (152, 226, 180),
-    (160, 214, 228),
-    (160, 162, 160),
-    (0, 0, 0),
-    (0, 0, 0),
-];
+mod palette;
+pub use palette::NES_PALETTE;
 
-fn main() -> Result<(), String> {
-    // Initialize SDL2
+fn init_sdl() -> Result<(Sdl, Canvas<Window>), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let window = video
@@ -97,41 +38,86 @@ fn main() -> Result<(), String> {
         .opengl()
         .build()
         .map_err(|e| e.to_string())?;
-    let mut canvas = window
+    let canvas = window
         .into_canvas()
         .software()
         .present_vsync()
         .build()
         .map_err(|e| e.to_string())?;
-    let texture_creator = canvas.texture_creator();
-    let mut texture = texture_creator
-        .create_texture_streaming(PixelFormatEnum::RGB24, 256, 240)
-        .map_err(|e| e.to_string())?;
+    Ok((sdl, canvas))
+}
 
-    // Create emulator
+fn init_emu() -> NNES {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
         die!("usage: cargo run -- <path to rom>");
     }
-    let rom = match loader::validate(&args[1]) {
+    let rom = match validate_rom(&args[1]) {
         Ok(rom) => rom,
         Err(msg) => {
             die!(msg.as_str());
         }
     };
     let cartridge = Cartridge::new(&rom);
-    let nnes = &mut NNES::new(cartridge);
+    let mut nnes = NNES::new(cartridge);
     nnes.reset();
+    nnes
+}
 
-    loop {
-        nnes.cpu.step(true);
-    }
+fn main() -> Result<(), String> {
+    let (sdl, mut canvas) = init_sdl()?;
+    let texture_creator = canvas.texture_creator();
+    let mut texture = texture_creator
+        .create_texture_streaming(PixelFormatEnum::RGB24, 256, 240)
+        .map_err(|e| e.to_string())?;
+
+    let mut nnes = init_emu();
+
+    // // Trace CPU execution
+    // loop {
+    //     nnes.cpu.step(true);
+    // }
+
+    // // Draw NES_PALETTE to screen
+    // let mut event_pump = sdl.event_pump()?;
+    // 'running: loop {
+    //     texture.with_lock(None, |buffer: &mut [u8], pitch: usize| {
+    //         for y in 0..240 {
+    //             for x in 0..256 {
+    //                 // Divide into an 8×8 grid of blocks, each 32×30px
+    //                 let block_x = x / 32;
+    //                 let block_y = y / 30;
+    //                 let palette_idx = (block_y * 8 + block_x) as usize;
+    //                 let (r, g, b) = NES_PALETTE[palette_idx];
+
+    //                 let offset = y * pitch + x * 3;
+    //                 buffer[offset] = r;
+    //                 buffer[offset + 1] = g;
+    //                 buffer[offset + 2] = b;
+    //             }
+    //         }
+    //     })?;
+
+    //     canvas.clear();
+    //     canvas.copy(&texture, None, None)?;
+    //     canvas.present();
+
+    //     for event in event_pump.poll_iter() {
+    //         match event {
+    //             Event::Quit { .. } => {
+    //                 break 'running;
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+
+    //     thread::sleep(Duration::from_millis(16));
+    // }
 
     // // Master-cycles to tick per frame:
     // // NES CPU runs ~1.7898 MHz, frame rate ~60.1 Hz ⇒ ~29780 CPU ticks/frame.
     // // You tick CPU once per 12 master cycles ⇒ master_cycles_per_frame ≈ 29780 * 12.
     // let master_cycles_per_frame = 29780 * 12;
-
     // let mut event_pump = sdl.event_pump()?;
     // 'running: loop {
     //     // 1) Advance the emu
