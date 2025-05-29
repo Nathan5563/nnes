@@ -1,5 +1,5 @@
 use super::{Flags, CPU, IRQ_VECTOR, NMI_VECTOR};
-use crate::utils::{add_mod_8, bit_0, bit_6, bit_7, hi_byte, lo_byte};
+use crate::utils::{bit_0, bit_6, bit_7, hi_byte, lo_byte};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum AddressingMode {
@@ -327,7 +327,7 @@ impl CPU {
             }
             1 => {
                 let _ = self.bus.mem_read(self.store.addr);
-                self.store.addr = add_mod_8(self.store.addr as u8, self.x) as u16;
+                self.store.addr = self.x.wrapping_add(self.store.addr as u8) as u16;
                 true
             }
             _ => unreachable!(),
@@ -342,7 +342,7 @@ impl CPU {
             }
             1 => {
                 let _ = self.bus.mem_read(self.store.addr);
-                self.store.addr = add_mod_8(self.store.addr as u8, self.y) as u16;
+                self.store.addr = self.y.wrapping_add(self.store.addr as u8) as u16;
                 true
             }
             _ => unreachable!(),

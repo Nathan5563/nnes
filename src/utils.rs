@@ -1,11 +1,3 @@
-pub fn add_mod_8(n: u8, m: u8) -> u8 {
-    n.wrapping_add(m)
-}
-
-pub fn add_mod_16(n: u16, m: u16) -> u16 {
-    n.wrapping_add(m)
-}
-
 pub fn hi_byte(n: u16) -> u8 {
     (n >> 8) as u8
 }
