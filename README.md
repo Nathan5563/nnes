@@ -1,4 +1,4 @@
-# NNES - Cycle-Accurate NES Emulator
+# NNES: A Cycle-Accurate NES Emulator
 NNES is a work-in-progress, cycle-accurate NES emulator written in Rust. It currently implements the 2A03 CPU core, memory bus, cartridge handling, and 2C02 PPU scaffolding. The goal is perfect cycle-accuracy for NROM (mapper 0) games, with future plans to support additional mappers.
 
 ## Project Status
@@ -24,7 +24,7 @@ sudo apt install libsdl2-dev
 
 ### 1. Clone the repo
 ```
-git clone https://github.com/Nathan5563/nnes.git
+git clone git@github.com:Nathan5563/nnes.git
 cd nnes
 ```
 
