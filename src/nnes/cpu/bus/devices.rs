@@ -44,7 +44,7 @@ impl BusDevice for PPU_Regs {
 
     fn peek(&self, addr: u16) -> u8 {
         let reg = (addr & 0x7) as u8;
-        self.ppu.borrow().peek(reg)
+        self.ppu.borrow().reg_peek(reg)
     }
 }
 

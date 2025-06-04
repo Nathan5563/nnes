@@ -1,4 +1,4 @@
-use super::{PPU, Mirroring};
+use super::PPU;
 use crate::utils::{
     bit_0, bit_1, bit_2, bit_3, bit_4, 
     byte_from_bits, hi_byte, lo_byte
@@ -162,6 +162,15 @@ impl PPU {
             5 => self.write_ppu_scroll(data),
             6 => self.write_ppu_addr(data),
             7 => self.write_ppu_data(data),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn reg_peek(&self, reg: u8) -> u8 {
+        match reg {
+            2 => self.ppu_ctrl.bits(),
+            4 => self.oam[self.oam_addr as usize],
+            7 => self.peek(self.v),
             _ => unimplemented!(),
         }
     }

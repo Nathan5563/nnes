@@ -3,9 +3,7 @@ mod render;
 
 use registers::{PPUCTRL, PPUMASK, PPUSTATUS};
 
-use crate::{
-    loader::{Cartridge, Mirroring},
-};
+use crate::loader::{Cartridge, Mirroring};
 
 pub struct PPU {
     // Architectural state
@@ -76,7 +74,13 @@ impl PPU {
         }
     }
 
-    pub fn reset(&mut self) {}
+    pub fn reset(&mut self) {
+        self.dot = 340;
+        self.scanline = 240;
+        self.reg_write(0, 0);
+        self.reg_write(1, 0);
+        self.reg_write(3, 0);
+    }
 
     fn mem_read(&self, mut addr: u16) -> u8 {
         addr &= 0x3FFF;
@@ -106,7 +110,7 @@ impl PPU {
                 self.chr_rom[addr as usize] = data;
             }
             0x2000..0x3F00 => {
-                addr = self.mirror_addr(addr) & 0x7FF;
+                addr = self.mirror_addr(addr - 0x2000) & 0x7FF;
                 self.vram[addr as usize] = data;
             }
             0x3F00..0x4000 => {
@@ -118,6 +122,10 @@ impl PPU {
             }
             _ => unreachable!()
         };
+    }
+
+    fn peek(&self, addr: u16) -> u8 {
+        self.mem_read(addr)
     }
     
     pub fn tick(&mut self) {
@@ -147,7 +155,22 @@ impl PPU {
     }
 
     // Helpers
-    fn mirror_addr(&self, addr: u16) -> u16 {
-        unimplemented!()
+    fn mirror_addr(&self, mut addr: u16) -> u16 {
+        // This folds any address in 0x2000..0x2FFF (or 0x3000..0x3EFF)
+        // to the correct 2KB VRAM page, according to the cartridge's mirroring.
+        //   Mirroring::VERTICAL   => tables {0,2} -> NT0,  {1,3} -> NT1
+        //   Mirroring::HORIZONTAL => tables {0,1} -> NT0,  {2,3} -> NT1
+        
+        addr &= 0xFFF;
+        let table = addr / 0x400;
+        let offset = addr & 0x3FF;
+        
+        let mirrored = match self.mirroring {
+            Mirroring::VERTICAL => table & 1,
+            Mirroring::HORIZONTAL => table >> 1,
+            Mirroring::ALTERNATIVE => unimplemented!(),
+        };
+
+        (mirrored << 10) + offset
     }
 }
