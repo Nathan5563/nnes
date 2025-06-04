@@ -61,6 +61,8 @@ nnes
     │   │   └── opcodes.rs
     │   ├── cpu.rs
     │   ├── ppu/
+    │   │   ├── registers.rs
+    │   │   └── render.rs
     │   └── ppu.rs
     ├── nnes.rs
     ├── palette.rs
