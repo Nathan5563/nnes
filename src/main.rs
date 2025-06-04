@@ -3,11 +3,11 @@ extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
 
-mod loader;
+mod cartridge;
 mod nnes;
 mod utils;
 
-use loader::{Cartridge, validate_rom};
+use cartridge::{Cartridge, validate_rom};
 use nnes::NNES;
 use sdl2::{
     event::Event,

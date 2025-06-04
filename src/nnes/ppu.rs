@@ -3,7 +3,7 @@ mod render;
 
 use registers::{PPUCTRL, PPUMASK, PPUSTATUS};
 
-use crate::loader::{Cartridge, Mirroring};
+use crate::cartridge::{Cartridge, Mirroring};
 
 pub struct PPU {
     // Architectural state
