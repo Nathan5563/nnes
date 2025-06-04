@@ -1,11 +1,11 @@
 use std::{fs, iter};
-use crate::utils::{bit_0, bit_1, bit_3, hi_nibble, from_nibbles};
+use crate::utils::{bit_0, bit_1, bit_3, hi_nibble, byte_from_nibbles};
 
 #[derive(Clone, Copy)]
 pub enum Mirroring {
-    Vertical,
-    Horizontal,
-    Alternative,
+    VERTICAL,
+    HORIZONTAL,
+    ALTERNATIVE,
 }
 
 const NES_MAGIC: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
@@ -34,7 +34,7 @@ pub fn validate_rom(arg: &String) -> Result<Vec<u8>, String> {
     // Not mapper 0
     let lo = hi_nibble(rom[6]);
     let hi = hi_nibble(rom[7]);
-    let mapper = from_nibbles(lo, hi);
+    let mapper = byte_from_nibbles(lo, hi);
     if mapper != 0 {
         return Err("error: unsupported mapper".to_string());
     }
@@ -117,14 +117,14 @@ impl Cartridge {
             .collect();
         let prg_rom = rom[prg_start..prg_start + prg_rom_size].to_vec();
         let chr_rom = rom[chr_start..chr_start + chr_rom_size].to_vec();
-        let mapper = from_nibbles(mapper_lo, mapper_hi);
+        let mapper = byte_from_nibbles(mapper_lo, mapper_hi);
         
         let mirroring = if bit_3(rom[6]) == 1 {
-            Mirroring::Alternative
+            Mirroring::ALTERNATIVE
         } else if bit_0(rom[6]) == 0 {
-            Mirroring::Horizontal
+            Mirroring::HORIZONTAL
         } else {
-            Mirroring::Vertical
+            Mirroring::VERTICAL
         };
 
         Cartridge {
