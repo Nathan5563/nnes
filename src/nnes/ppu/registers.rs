@@ -1,8 +1,5 @@
 use super::PPU;
-use crate::utils::{
-    bit_0, bit_1, bit_2, bit_3, bit_4, 
-    byte_from_bits, hi_byte, lo_byte
-};
+use crate::utils::{bit_0, bit_1, bit_2, bit_3, bit_4, bit_7, byte_from_bits, hi_byte, lo_byte};
 
 bitflags! {
     pub struct PPUCTRL: u8 {
@@ -31,15 +28,16 @@ bitflags! {
         // get bits [0, 4] from ppu open bus
         const SPRITE_OVERFLOW = 0b0010_0000;
         const SPRITE0_HIT = 0b0100_0000;
-        const VBLANK_FLAG = 0b1000_0000;
+        const VBLANK_NMI = 0b1000_0000;
     }
-}    
+}
 
 impl PPU {
     // 0x2000
     fn write_ppu_ctrl(&mut self, data: u8) {
         self.ppu_ctrl = PPUCTRL::from_bits_truncate(data);
-        // TODO: check if nmi flag changed
+        self.nmi_request = if bit_7(data) == 1 { true } else { false };
+        self.nmi_change();
         self.t = (self.t & 0xF3FF) | (data as u16 & 0x03) << 10;
     }
 
@@ -50,8 +48,10 @@ impl PPU {
 
     // 0x2002
     fn read_ppu_status(&mut self) -> u8 {
-        // TODO: investigate bit 7 and how nmi checking should follow here
-        let bit_7 = self.ppu_status.contains(PPUSTATUS::VBLANK_FLAG) as u8;
+        let bit_7 = self.ppu_status.contains(PPUSTATUS::VBLANK_NMI) as u8;
+        self.ppu_status.remove(PPUSTATUS::VBLANK_NMI);
+        self.nmi_change();
+
         let bit_6 = self.ppu_status.contains(PPUSTATUS::SPRITE0_HIT) as u8;
         let bit_5 = self.ppu_status.contains(PPUSTATUS::SPRITE_OVERFLOW) as u8;
         let bit_4 = bit_4(self.open_bus);
@@ -63,10 +63,7 @@ impl PPU {
         // Side effect of reading 0x2002
         self.w = 0;
 
-        byte_from_bits(
-            bit_7, bit_6, bit_5, bit_4, 
-            bit_3, bit_2, bit_1, bit_0
-        )
+        byte_from_bits(bit_7, bit_6, bit_5, bit_4, bit_3, bit_2, bit_1, bit_0)
     }
 
     // 0x2003
@@ -104,9 +101,7 @@ impl PPU {
             let fine_y = data & 0x07;
 
             //  replace [12,14] with fine Y, bits [5,9] with coarse Y
-            self.t = (self.t & !0x73E0) | 
-                ((fine_y as u16) << 12) | 
-                ((coarse_y as u16) << 5);
+            self.t = (self.t & !0x73E0) | ((fine_y as u16) << 12) | ((coarse_y as u16) << 5);
         }
         self.w ^= 1;
     }
@@ -176,6 +171,14 @@ impl PPU {
     }
 
     // Helpers
+    fn nmi_change(&mut self) {
+        let nmi = self.nmi_request && self.ppu_status.contains(PPUSTATUS::VBLANK_NMI);
+        if nmi && !self.nmi_previous {
+            self.nmi_delay = 2;
+        }
+        self.nmi_previous = nmi;
+    }
+
     fn increment_v(&mut self) {
         if self.ppu_ctrl.contains(PPUCTRL::VRAM_INCREMENT) {
             self.v = self.v.wrapping_add(32);

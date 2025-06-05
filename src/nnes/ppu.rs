@@ -1,8 +1,9 @@
 mod registers;
 mod render;
 
+use super::CPU;
 use registers::{PPUCTRL, PPUMASK, PPUSTATUS};
-
+use std::{cell::RefCell, rc::Rc};
 use crate::cartridge::{Cartridge, Mirroring};
 
 pub struct PPU {
@@ -10,7 +11,8 @@ pub struct PPU {
     v: u16, // 15 bits
     t: u16, // 15 bits
     x: u8,
-    w: u8,
+    w: u8, // 1 bit
+    f: u8, // 1 bit
     chr_rom: Vec<u8>,
     vram: [u8; 0x1F00],
     palette: [u8; 0x20],
@@ -29,14 +31,19 @@ pub struct PPU {
     ppu_status: PPUSTATUS,
     oam_addr: u8,
 
+    // NMI handling
+    nmi_request: bool,
+    nmi_previous: bool,
+    nmi_delay: u8,
+    pub on_nmi: Option<Box<dyn FnMut()>>,
+
     // PPU metadata
     mirroring: Mirroring,
-    odd_frame: bool,
-    dot: u16,
+    cycle: u16,
     scanline: i16,
 
     // Debugging tools
-    total_dots: u64,
+    total_cycles: u64,
     total_scanlines: u64,
     total_frames: u64,
 }
@@ -48,6 +55,7 @@ impl PPU {
             t: 0,
             x: 0,
             w: 0,
+            f: 0,
             chr_rom: cartridge.chr_rom.clone(),
             vram: [0; 0x1F00],
             palette: [0; 0x20],
@@ -60,22 +68,26 @@ impl PPU {
 
             ppu_ctrl: PPUCTRL::empty(),
             ppu_mask: PPUMASK::empty(),
-            ppu_status: PPUSTATUS::VBLANK_FLAG.union(PPUSTATUS::SPRITE_OVERFLOW),
+            ppu_status: PPUSTATUS::SPRITE_OVERFLOW,
             oam_addr: 0,
 
+            nmi_request: false,
+            nmi_previous: false,
+            nmi_delay: 0,
+            on_nmi: None,
+
             mirroring: cartridge.mirroring,
-            odd_frame: false,
-            dot: 0,
+            cycle: 0,
             scanline: 0,
 
-            total_dots: 0,
+            total_cycles: 0,
             total_scanlines: 0,
             total_frames: 0,
         }
     }
 
     pub fn reset(&mut self) {
-        self.dot = 340;
+        self.cycle = 340;
         self.scanline = 240;
         self.reg_write(0, 0);
         self.reg_write(1, 0);
@@ -85,9 +97,7 @@ impl PPU {
     fn mem_read(&self, mut addr: u16) -> u8 {
         addr &= 0x3FFF;
         match addr {
-            0x0000..0x2000 => {
-                self.chr_rom[addr as usize]
-            }
+            0x0000..0x2000 => self.chr_rom[addr as usize],
             0x2000..0x3F00 => {
                 addr = self.mirror_addr(addr) & 0x7FF;
                 self.vram[addr as usize]
@@ -99,7 +109,7 @@ impl PPU {
                 }
                 self.palette[addr as usize]
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -120,38 +130,24 @@ impl PPU {
                 }
                 self.palette[addr as usize] = data;
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         };
     }
 
     fn peek(&self, addr: u16) -> u8 {
         self.mem_read(addr)
     }
-    
+
     pub fn tick(&mut self) {
         //————————————————————————————————————————————————————————————————
-        //  TODO: Work for current dot
+        //  TODO: Work for current cycle
         //————————————————————————————————————————————————————————————————
-        
+        self.poll_nmi();
 
         //————————————————————————————————————————————————————————————————
         //  Timing calculations
         //————————————————————————————————————————————————————————————————
-        self.dot += 1;
-        self.total_dots += 1;
-
-        // Skip the last cycle of the pre-render line on odd frames
-        if (self.odd_frame && self.scanline == 261 && self.dot == 340) || self.dot == 341 {
-            self.dot = 0;
-            self.scanline += 1;
-        }
-
-        // Finalize frame
-        if self.scanline == 262 {
-            self.scanline = 0;
-            self.odd_frame = !self.odd_frame;
-            self.total_frames += 1;
-        }
+        self.update_timing();
     }
 
     // Helpers
@@ -160,11 +156,11 @@ impl PPU {
         // to the correct 2KB VRAM page, according to the cartridge's mirroring.
         //   Mirroring::VERTICAL   => tables {0,2} -> NT0,  {1,3} -> NT1
         //   Mirroring::HORIZONTAL => tables {0,1} -> NT0,  {2,3} -> NT1
-        
+
         addr &= 0xFFF;
         let table = addr / 0x400;
         let offset = addr & 0x3FF;
-        
+
         let mirrored = match self.mirroring {
             Mirroring::VERTICAL => table & 1,
             Mirroring::HORIZONTAL => table >> 1,
@@ -172,5 +168,36 @@ impl PPU {
         };
 
         (mirrored << 10) + offset
+    }
+
+    fn poll_nmi(&mut self) {
+        if self.nmi_delay > 0 {
+            self.nmi_delay -= 1;
+            if self.nmi_delay == 0
+                && self.nmi_request
+                && self.ppu_status.contains(PPUSTATUS::VBLANK_NMI)
+            {
+                (self.on_nmi.as_mut().unwrap())();
+            }
+        }
+    }
+
+    fn update_timing(&mut self) {
+        self.cycle += 1;
+        self.total_cycles += 1;
+
+        // Skip the last cycle of the pre-render line on odd frames
+        // Reset after the last cycle
+        if (self.f == 1 && self.scanline == 261 && self.cycle == 340) || self.cycle == 341 {
+            self.cycle = 0;
+            self.scanline += 1;
+        }
+
+        // Finalize frame
+        if self.scanline == 262 {
+            self.scanline = 0;
+            self.f ^= 1;
+            self.total_frames += 1;
+        }
     }
 }
