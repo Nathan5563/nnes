@@ -1,5 +1,5 @@
+use crate::utils::{bit_0, bit_1, bit_3, byte_from_nibbles, hi_nibble};
 use std::{fs, iter};
-use crate::utils::{bit_0, bit_1, bit_3, hi_nibble, byte_from_nibbles};
 
 #[derive(Clone, Copy)]
 pub enum Mirroring {
@@ -45,7 +45,7 @@ pub fn validate_rom(arg: &String) -> Result<Vec<u8>, String> {
 pub struct Cartridge {
     pub has_trainer: bool,
     pub has_sram: bool,
-    
+
     pub sram: Vec<u8>,
     pub prg_rom: Vec<u8>,
     pub chr_rom: Vec<u8>,
@@ -118,7 +118,7 @@ impl Cartridge {
         let prg_rom = rom[prg_start..prg_start + prg_rom_size].to_vec();
         let chr_rom = rom[chr_start..chr_start + chr_rom_size].to_vec();
         let mapper = byte_from_nibbles(mapper_lo, mapper_hi);
-        
+
         let mirroring = if bit_3(rom[6]) == 1 {
             Mirroring::ALTERNATIVE
         } else if bit_0(rom[6]) == 0 {

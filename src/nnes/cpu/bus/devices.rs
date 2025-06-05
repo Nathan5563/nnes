@@ -1,5 +1,5 @@
-use std::{rc::Rc, cell::RefCell};
 use super::{BusDevice, Cartridge, PPU};
+use std::{cell::RefCell, rc::Rc};
 
 pub struct RAM {
     ram: [u8; 0x0800],

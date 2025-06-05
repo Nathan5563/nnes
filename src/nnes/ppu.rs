@@ -2,9 +2,9 @@ mod registers;
 mod render;
 
 use super::CPU;
+use crate::cartridge::{Cartridge, Mirroring};
 use registers::{PPUCTRL, PPUMASK, PPUSTATUS};
 use std::{cell::RefCell, rc::Rc};
-use crate::cartridge::{Cartridge, Mirroring};
 
 pub struct PPU {
     // Architectural state

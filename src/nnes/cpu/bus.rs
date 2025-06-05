@@ -1,8 +1,8 @@
 mod devices;
 
-use std::{rc::Rc, cell::RefCell};
 use super::super::{Cartridge, PPU};
 use devices::memory_map;
+use std::{cell::RefCell, rc::Rc};
 
 pub trait BusDevice {
     fn contains(&self, addr: u16) -> bool;

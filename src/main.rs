@@ -7,7 +7,7 @@ mod cartridge;
 mod nnes;
 mod utils;
 
-use cartridge::{Cartridge, validate_rom};
+use cartridge::{validate_rom, Cartridge};
 use nnes::NNES;
 use sdl2::{
     event::Event,

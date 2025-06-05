@@ -379,7 +379,7 @@ impl CPU {
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.x);
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                
+
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = match self.ins.unwrap().code {
                     0x9D | 0x1E | 0x3E | 0x5E | 0x7E | 0xDE | 0xFE => true,
@@ -411,7 +411,7 @@ impl CPU {
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                
+
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = match self.ins.unwrap().code {
                     0x99 => true,
@@ -471,7 +471,7 @@ impl CPU {
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
                 self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-                
+
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = match self.ins.unwrap().code {
                     0x91 => true,
@@ -524,9 +524,11 @@ impl CPU {
                         self.nmi_pending = false;
                     }
                     IRQ_VECTOR => {
-                        if self.hijacked { self.irq_pending = false };
+                        if self.hijacked {
+                            self.irq_pending = false
+                        };
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }
                 self.store.lo = self.bus.mem_read(self.store.vector);
                 false

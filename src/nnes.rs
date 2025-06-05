@@ -1,7 +1,7 @@
 mod cpu;
 mod ppu;
 
-use std::{rc::Rc, cell::RefCell};
+use std::{cell::RefCell, rc::Rc};
 
 use super::Cartridge;
 use cpu::{bus::Bus, CPU};
@@ -9,7 +9,7 @@ use ppu::PPU;
 
 pub struct NNES {
     pub master_clock: u64,
-    pub cpu: CPU,
+    pub cpu: Rc<RefCell<CPU>>,
     pub ppu: Rc<RefCell<PPU>>,
     // pub apu: Rc<RefCell<APU>>,
 }
@@ -18,8 +18,13 @@ impl NNES {
     pub fn new(cartridge: Cartridge) -> Self {
         let ppu = Rc::new(RefCell::new(PPU::new(&cartridge)));
         let bus = Bus::new(ppu.clone(), &cartridge);
-        let cpu = CPU::new(bus);
+        let cpu = Rc::new(RefCell::new(CPU::new(bus)));
         // let apu = APU::new();
+
+        let cpu_ref = cpu.clone();
+        ppu.borrow_mut().on_nmi = Some(Box::new(move || {
+            cpu_ref.borrow_mut().nmi_pending = true;
+        }));
 
         NNES {
             master_clock: 0,
@@ -31,7 +36,7 @@ impl NNES {
 
     pub fn reset(&mut self) {
         self.ppu.borrow_mut().reset();
-        self.cpu.reset();
+        self.cpu.borrow_mut().reset();
     }
 
     pub fn tick(&mut self) {
@@ -42,7 +47,7 @@ impl NNES {
 
         // CPU runs at master/12
         if self.master_clock % 12 == 0 {
-            self.cpu.tick();
+            self.cpu.borrow_mut().tick();
         }
 
         // // APU runs at master/24

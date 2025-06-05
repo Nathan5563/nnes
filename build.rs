@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf, process::Command};
 
 fn main() {
-    println!("cargo:rerun-if-changed=src/palette.rs"); 
+    println!("cargo:rerun-if-changed=src/palette.rs");
     println!("cargo:rerun-if-changed=scripts/load_palette.py");
 
     let dest = PathBuf::from("src/palette.rs");
