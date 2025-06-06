@@ -385,6 +385,9 @@ impl CPU {
                     0x9D | 0x1E | 0x3E | 0x5E | 0x7E | 0xDE | 0xFE => true,
                     _ => false,
                 };
+                if self.page_crossed || write_ins {
+                    self.required_ins_ticks += 1;
+                }
                 !(self.page_crossed || write_ins)
             }
             2 => {
@@ -417,6 +420,9 @@ impl CPU {
                     0x99 => true,
                     _ => false,
                 };
+                if self.page_crossed || write_ins {
+                    self.required_ins_ticks += 1;
+                }
                 !(self.page_crossed || write_ins)
             }
             2 => {
@@ -477,6 +483,9 @@ impl CPU {
                     0x91 => true,
                     _ => false,
                 };
+                if self.page_crossed || write_ins {
+                    self.required_ins_ticks += 1;
+                }
                 !(self.page_crossed || write_ins)
             }
             3 => {
@@ -1172,12 +1181,18 @@ impl CPU {
         match subcycle {
             0 => {
                 self.store.offset = self.get_operand() as i8;
+                if jmp {
+                    self.required_ins_ticks += 1;
+                }
                 !jmp
             }
             1 => {
                 let _ = self.bus.mem_read(self.pc);
                 self.store.addr = self.pc.wrapping_add(self.store.offset as i16 as u16);
                 self.pc = u16::from_le_bytes([lo_byte(self.store.addr), hi_byte(self.pc)]);
+                if hi_byte(self.pc) != hi_byte(self.store.addr) {
+                    self.required_ins_ticks += 1;
+                }
                 hi_byte(self.pc) == hi_byte(self.store.addr)
             }
             2 => {

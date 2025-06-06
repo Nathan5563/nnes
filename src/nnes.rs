@@ -23,6 +23,7 @@ impl NNES {
 
         let cpu_ref = cpu.clone();
         ppu.borrow_mut().on_nmi = Some(Box::new(move || {
+            // println!("[CPU] trigger_nmi() called at PC=${:04X}", cpu_ref.borrow_mut().pc);
             cpu_ref.borrow_mut().nmi_pending = true;
         }));
 
@@ -47,6 +48,9 @@ impl NNES {
 
         // CPU runs at master/12
         if self.master_clock % 12 == 0 {
+            // if self.cpu.borrow_mut().ins.is_none() {
+            //     self.cpu.borrow_mut().trace();
+            // }
             self.cpu.borrow_mut().tick();
         }
 

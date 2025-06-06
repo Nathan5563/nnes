@@ -1,42 +1,17 @@
-use super::PPU;
+use super::{PPU, PPUCTRL, PPUMASK, PPUSTATUS};
 use crate::utils::{bit_0, bit_1, bit_2, bit_3, bit_4, bit_7, byte_from_bits, hi_byte, lo_byte};
-
-bitflags! {
-    pub struct PPUCTRL: u8 {
-        const NAMETABLE1 = 0b0000_0001;
-        const NAMETABLE2 = 0b0000_0010;
-        const VRAM_INCREMENT = 0b0000_0100;
-        const SPRITE_TABLE = 0b0000_1000;
-        const BACKGROUND_TABLE = 0b0001_0000;
-        const SPRITE_SIZE = 0b0010_0000;
-        const MASTER_SLAVE = 0b0100_0000;
-        const VBLANK_NMI = 0b1000_0000;
-    }
-
-    pub struct PPUMASK: u8 {
-        const GRAYSCALE = 0b0000_0001;
-        const SHOW_BACKGROUND = 0b0000_0010;
-        const SHOW_SPRITES = 0b0000_0100;
-        const BACKGROUND_RENDERING = 0b0000_1000;
-        const SPRITE_RENDERING = 0b0001_0000;
-        const EMPH_RED = 0b0010_0000;
-        const EMPH_GREEN = 0b0100_0000;
-        const EMPH_BLUE = 0b1000_0000;
-    }
-
-    pub struct PPUSTATUS: u8 {
-        // get bits [0, 4] from ppu open bus
-        const SPRITE_OVERFLOW = 0b0010_0000;
-        const SPRITE0_HIT = 0b0100_0000;
-        const VBLANK_NMI = 0b1000_0000;
-    }
-}
 
 impl PPU {
     // 0x2000
     fn write_ppu_ctrl(&mut self, data: u8) {
+        // println!(
+        //     "[PPU] write_ppu_ctrl called with data={:02X}, old_ctrl={:02X}",
+        //     data,
+        //     self.ppu_ctrl.bits()
+        // );
+
         self.ppu_ctrl = PPUCTRL::from_bits_truncate(data);
-        self.nmi_request = if bit_7(data) == 1 { true } else { false };
+        self.nmi_request = if bit_7(data) != 0 { true } else { false };
         self.nmi_change();
         self.t = (self.t & 0xF3FF) | (data as u16 & 0x03) << 10;
     }
@@ -63,7 +38,14 @@ impl PPU {
         // Side effect of reading 0x2002
         self.w = 0;
 
-        byte_from_bits(bit_7, bit_6, bit_5, bit_4, bit_3, bit_2, bit_1, bit_0)
+        let res = byte_from_bits(bit_7, bit_6, bit_5, bit_4, bit_3, bit_2, bit_1, bit_0);
+
+        // println!(
+        //     "[PPU] read_ppu_status @ scanline={}, cycle={} → returns ${:02X}",
+        //     self.scanline, self.cycle, res
+        // );
+
+        res
     }
 
     // 0x2003
@@ -139,16 +121,20 @@ impl PPU {
         self.increment_v();
     }
 
+    // I/O Register API
     pub fn reg_read(&mut self, reg: u8) -> u8 {
-        match reg {
+        let data = match reg {
             2 => self.read_ppu_status(),
             4 => self.read_oam_data(),
             7 => self.read_ppu_data(),
             _ => unimplemented!(),
-        }
+        };
+        self.open_bus = data;
+        data
     }
 
     pub fn reg_write(&mut self, reg: u8, data: u8) {
+        self.debug_buffer = data;
         match reg {
             0 => self.write_ppu_ctrl(data),
             1 => self.write_ppu_mask(data),
@@ -159,26 +145,24 @@ impl PPU {
             7 => self.write_ppu_data(data),
             _ => unimplemented!(),
         }
+        self.open_bus = data;
     }
 
     pub fn reg_peek(&self, reg: u8) -> u8 {
         match reg {
-            2 => self.ppu_ctrl.bits(),
+            0 => self.ppu_ctrl.bits(),
+            1 => self.ppu_mask.bits(),
+            2 => self.ppu_status.bits(),
+            3 => self.oam_addr,
             4 => self.oam[self.oam_addr as usize],
+            5 => self.debug_buffer,
+            6 => self.debug_buffer,
             7 => self.peek(self.v),
-            _ => unimplemented!(),
+            _ => unreachable!(),
         }
     }
 
     // Helpers
-    fn nmi_change(&mut self) {
-        let nmi = self.nmi_request && self.ppu_status.contains(PPUSTATUS::VBLANK_NMI);
-        if nmi && !self.nmi_previous {
-            self.nmi_delay = 2;
-        }
-        self.nmi_previous = nmi;
-    }
-
     fn increment_v(&mut self) {
         if self.ppu_ctrl.contains(PPUCTRL::VRAM_INCREMENT) {
             self.v = self.v.wrapping_add(32);

@@ -1,10 +1,38 @@
 mod registers;
 mod render;
 
-use super::CPU;
 use crate::cartridge::{Cartridge, Mirroring};
-use registers::{PPUCTRL, PPUMASK, PPUSTATUS};
-use std::{cell::RefCell, rc::Rc};
+
+bitflags! {
+    pub struct PPUCTRL: u8 {
+        const NAMETABLE1 = 0b0000_0001;
+        const NAMETABLE2 = 0b0000_0010;
+        const VRAM_INCREMENT = 0b0000_0100;
+        const SPRITE_TABLE = 0b0000_1000;
+        const BACKGROUND_TABLE = 0b0001_0000;
+        const SPRITE_SIZE = 0b0010_0000;
+        const MASTER_SLAVE = 0b0100_0000;
+        const VBLANK_NMI = 0b1000_0000;
+    }
+
+    pub struct PPUMASK: u8 {
+        const GRAYSCALE = 0b0000_0001;
+        const SHOW_BACKGROUND = 0b0000_0010;
+        const SHOW_SPRITES = 0b0000_0100;
+        const BACKGROUND_RENDERING = 0b0000_1000;
+        const SPRITE_RENDERING = 0b0001_0000;
+        const EMPH_RED = 0b0010_0000;
+        const EMPH_GREEN = 0b0100_0000;
+        const EMPH_BLUE = 0b1000_0000;
+    }
+
+    pub struct PPUSTATUS: u8 {
+        // get bits [0, 4] from ppu open bus
+        const SPRITE_OVERFLOW = 0b0010_0000;
+        const SPRITE0_HIT = 0b0100_0000;
+        const VBLANK_NMI = 0b1000_0000;
+    }
+}
 
 pub struct PPU {
     // Architectural state
@@ -15,7 +43,7 @@ pub struct PPU {
     f: u8, // 1 bit
     chr_rom: Vec<u8>,
     vram: [u8; 0x1F00],
-    palette: [u8; 0x20],
+    pub palette: [u8; 0x20],
     oam: [u8; 64 * 4],
 
     // Buffers
@@ -40,9 +68,24 @@ pub struct PPU {
     // PPU metadata
     mirroring: Mirroring,
     cycle: u16,
-    scanline: i16,
+    scanline: u16,
+
+    // Background data
+    nametable: u8,
+    attribute_table: u8,
+    low_tile: u8,
+    high_tile: u8,
+    tiles: u64,
+
+    // Sprite data
+    sprite_count: i32,
+    sprite_patterns: [u32; 8],
+    sprite_positions: [u8; 8],
+    sprite_priorities: [u8; 8],
+    sprite_indices: [u8; 8],
 
     // Debugging tools
+    debug_buffer: u8,
     total_cycles: u64,
     total_scanlines: u64,
     total_frames: u64,
@@ -68,7 +111,7 @@ impl PPU {
 
             ppu_ctrl: PPUCTRL::empty(),
             ppu_mask: PPUMASK::empty(),
-            ppu_status: PPUSTATUS::SPRITE_OVERFLOW,
+            ppu_status: PPUSTATUS::empty(),
             oam_addr: 0,
 
             nmi_request: false,
@@ -80,6 +123,19 @@ impl PPU {
             cycle: 0,
             scanline: 0,
 
+            nametable: 0,
+            attribute_table: 0,
+            low_tile: 0,
+            high_tile: 0,
+            tiles: 0,
+
+            sprite_count: 0,
+            sprite_patterns: [0; 8],
+            sprite_positions: [0; 8],
+            sprite_priorities: [0; 8],
+            sprite_indices: [0; 8],
+
+            debug_buffer: 0,
             total_cycles: 0,
             total_scanlines: 0,
             total_frames: 0,
@@ -87,8 +143,8 @@ impl PPU {
     }
 
     pub fn reset(&mut self) {
-        self.cycle = 340;
-        self.scanline = 240;
+        self.cycle = 0;
+        self.scanline = 261;
         self.reg_write(0, 0);
         self.reg_write(1, 0);
         self.reg_write(3, 0);
@@ -103,10 +159,7 @@ impl PPU {
                 self.vram[addr as usize]
             }
             0x3F00..0x4000 => {
-                addr = (addr - 0x3F00) & 0x1F;
-                if addr >= 16 && addr & 0x3 == 0 {
-                    addr -= 16;
-                }
+                addr = self.palette_addr((addr - 0x3F00) & 0x1F);
                 self.palette[addr as usize]
             }
             _ => unreachable!(),
@@ -124,10 +177,7 @@ impl PPU {
                 self.vram[addr as usize] = data;
             }
             0x3F00..0x4000 => {
-                addr = (addr - 0x3F00) & 0x1F;
-                if addr >= 16 && addr & 0x3 == 0 {
-                    addr -= 16;
-                }
+                addr = self.palette_addr((addr - 0x3F00) & 0x1F);
                 self.palette[addr as usize] = data;
             }
             _ => unreachable!(),
@@ -142,7 +192,86 @@ impl PPU {
         //————————————————————————————————————————————————————————————————
         //  TODO: Work for current cycle
         //————————————————————————————————————————————————————————————————
+        // println!(
+        //     "[PPU] tick() @ scanline={}, cycle={}, total_cycles={}",
+        //     self.scanline, self.cycle, self.total_cycles
+        // );
         self.poll_nmi();
+
+        let can_render = self
+            .ppu_mask
+            .contains(PPUMASK::BACKGROUND_RENDERING | PPUMASK::SPRITE_RENDERING);
+        let prerender_line = self.scanline == 261;
+        let visible_line = self.scanline < 240;
+        let render_line = prerender_line || visible_line;
+        let prefetch_cycle = (320..336).contains(&self.cycle);
+        let visible_cycle = (0..256).contains(&self.cycle);
+        let fetch_cycle = prefetch_cycle || visible_cycle;
+
+        // println!(
+        //     "[PPU] scanline={} cycle={}  can_render={}  render_line={}  fetch_cycle={}",
+        //     self.scanline, self.cycle, can_render, render_line, fetch_cycle
+        // );
+
+        // Background
+        if can_render {
+            if visible_line && visible_cycle {
+                self.draw_pixel();
+            }
+            if render_line && fetch_cycle {
+                self.tiles <<= 4;
+                match (self.cycle + 1) % 8 {
+                    1 => self.fetch_nametable(),
+                    3 => self.fetch_attribute_table(),
+                    5 => self.fetch_low_tile(),
+                    7 => self.fetch_high_tile(),
+                    0 => self.store_tiles(),
+                    _ => {}
+                }
+            }
+            if prerender_line && (279..304).contains(&self.cycle) {
+                self.copy_y();
+            }
+            if render_line {
+                if fetch_cycle && (self.cycle + 1) % 8 == 0 {
+                    self.increment_x();
+                }
+                if self.cycle == 255 {
+                    self.increment_y();
+                }
+                if self.cycle == 256 {
+                    self.copy_x();
+                }
+            }
+        }
+
+        // Sprites
+        if can_render {
+            if self.cycle == 256 {
+                if visible_line {
+                    self.evaluate_sprites()
+                } else {
+                    self.sprite_count = 0
+                }
+            }
+        }
+
+        // Vblank
+        if self.scanline == 241 && self.cycle == 0 {
+            // println!(
+            //     "[PPU] VBlank rising at scanline=241, cycle=1;  PPUCTRL={:02X}",
+            //     self.ppu_ctrl.bits()
+            // );
+            self.ppu_status.insert(PPUSTATUS::VBLANK_NMI);
+            self.nmi_change();
+        }
+        if prerender_line && self.cycle == 0 {
+            self.tiles = 0;
+            self.ppu_status.remove(PPUSTATUS::VBLANK_NMI);
+            self.nmi_change();
+            self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
+            self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
+        }
 
         //————————————————————————————————————————————————————————————————
         //  Timing calculations
@@ -152,11 +281,6 @@ impl PPU {
 
     // Helpers
     fn mirror_addr(&self, mut addr: u16) -> u16 {
-        // This folds any address in 0x2000..0x2FFF (or 0x3000..0x3EFF)
-        // to the correct 2KB VRAM page, according to the cartridge's mirroring.
-        //   Mirroring::VERTICAL   => tables {0,2} -> NT0,  {1,3} -> NT1
-        //   Mirroring::HORIZONTAL => tables {0,1} -> NT0,  {2,3} -> NT1
-
         addr &= 0xFFF;
         let table = addr / 0x400;
         let offset = addr & 0x3FF;
@@ -170,16 +294,47 @@ impl PPU {
         (mirrored << 10) + offset
     }
 
+    fn palette_addr(&self, mut addr: u16) -> u16 {
+        if addr >= 16 && addr % 4 == 0 {
+            addr -= 16;
+        }
+        addr
+    }
+
     fn poll_nmi(&mut self) {
         if self.nmi_delay > 0 {
+            // println!(
+            //     "[PPU] poll_nmi(): nmi_delay was {}, nmi_request={}, VBlank={} at scanline={}, cycle={}",
+            //     self.nmi_delay,
+            //     self.nmi_request,
+            //     self.ppu_status.contains(PPUSTATUS::VBLANK_NMI),
+            //     self.scanline,
+            //     self.cycle
+            // );
             self.nmi_delay -= 1;
             if self.nmi_delay == 0
                 && self.nmi_request
                 && self.ppu_status.contains(PPUSTATUS::VBLANK_NMI)
             {
+                // println!("[PPU] about to call on_nmi() now");
                 (self.on_nmi.as_mut().unwrap())();
             }
         }
+    }
+
+    fn nmi_change(&mut self) {
+        let nmi = self.nmi_request && self.ppu_status.contains(PPUSTATUS::VBLANK_NMI);
+        // println!(
+        //     "[PPU] nmi_change(): nmi_request={}, VBLANK_NMI={}, nmi_previous={}",
+        //     self.nmi_request,
+        //     self.ppu_status.contains(PPUSTATUS::VBLANK_NMI),
+        //     self.nmi_previous
+        // );
+        if nmi && !self.nmi_previous {
+            self.nmi_delay = 2;
+            // println!("[PPU] nmi_delay set to 2");
+        }
+        self.nmi_previous = nmi;
     }
 
     fn update_timing(&mut self) {
@@ -191,6 +346,7 @@ impl PPU {
         if (self.f == 1 && self.scanline == 261 && self.cycle == 340) || self.cycle == 341 {
             self.cycle = 0;
             self.scanline += 1;
+            self.total_scanlines += 1;
         }
 
         // Finalize frame

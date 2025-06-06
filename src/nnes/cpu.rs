@@ -46,7 +46,7 @@ pub enum CPUState {
 
 pub struct CPU {
     // Architectural state
-    pc: u16,
+    pub pc: u16,
     sp: u8,
     a: u8,
     x: u8,
@@ -58,8 +58,9 @@ pub struct CPU {
 
     // FSM metadata
     state: CPUState,
-    ins: Option<&'static OpCode>,
-    ins_ticks: i8,
+    pub ins: Option<&'static OpCode>,
+    curr_ins_ticks: i8,
+    required_ins_ticks: u8,
     store: CPUStore,
     software_interrupt: bool,
     pub nmi_pending: bool,
@@ -95,6 +96,8 @@ impl CPU {
 
             state: CPUState::Fetch,
             ins: None,
+            curr_ins_ticks: 0,
+            required_ins_ticks: 0,
             store: CPUStore {
                 lo: 0,
                 hi: 0,
@@ -110,7 +113,6 @@ impl CPU {
             hijacked: false,
             page_crossed: false,
 
-            ins_ticks: 0,
             total_ticks: 0,
         }
     }
@@ -145,6 +147,7 @@ impl CPU {
 
         if let Some(opcode) = opcodes_list[self.store.data as usize].as_ref() {
             self.ins = Some(opcode);
+            self.required_ins_ticks = self.ins.unwrap().cycles;
         } else {
             unimplemented!();
         }
@@ -172,10 +175,14 @@ impl CPU {
                 let done = (self.ins.unwrap().execute_fn)(self, subcycle);
                 self.set_next_state(done);
                 if done {
-                    self.ins_ticks = -1;
+                    self.curr_ins_ticks = -1;
                     if self.state == CPUState::Interrupt {
                         self.ins = opcodes_list[0x00].as_ref();
-                    };
+                        self.required_ins_ticks = self.ins.unwrap().cycles;
+                    } else {
+                        self.ins = None;
+                        self.required_ins_ticks = 0;
+                    }
                 };
             }
             CPUState::Interrupt => {
@@ -192,7 +199,7 @@ impl CPU {
         //————————————————————————————————————————————————————————————————
         //  Timing calculations
         //————————————————————————————————————————————————————————————————
-        self.ins_ticks += 1;
+        self.curr_ins_ticks += 1;
         self.total_ticks += 1;
     }
 
@@ -242,7 +249,7 @@ impl CPU {
 
     fn poll_interrupts(&mut self) {
         // Poll for interrupts if the second to last cycle has ended
-        if self.ins.unwrap().cycles - self.ins_ticks as u8 == 2 {
+        if self.required_ins_ticks - self.curr_ins_ticks as u8 == 2 {
             self.servicing_interrupt = if self.nmi_pending {
                 true
             } else if self.irq_pending && !self.p.intersects(Flags::INTERRUPT_DISABLE) {
@@ -254,7 +261,7 @@ impl CPU {
     }
 
     fn poll_hijacks(&mut self) {
-        if self.ins_ticks <= 3 {
+        if self.curr_ins_ticks <= 3 {
             if self.nmi_pending {
                 // NMI hijacking IRQ/BRK
                 self.hijacked = true;
@@ -274,19 +281,19 @@ impl CPU {
             self.trace();
         }
         self.tick();
-        while self.ins_ticks > 0 {
+        while self.curr_ins_ticks > 0 {
             self.tick();
         }
     }
 
-    fn trace(&mut self) {
-        self.store.data = self.bus.peek(self.pc);
+    pub fn trace(&mut self) {
+        let data = self.bus.peek(self.pc);
 
         let ins;
-        if let Some(opcode) = opcodes_list[self.store.data as usize].as_ref() {
+        if let Some(opcode) = opcodes_list[data as usize].as_ref() {
             ins = Some(opcode);
         } else {
-            println!("unknown opcode: {:02x}", self.store.data);
+            println!("unknown opcode: {:02x}", data);
             unimplemented!();
         }
 

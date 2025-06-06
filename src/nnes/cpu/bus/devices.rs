@@ -59,15 +59,13 @@ impl BusDevice for APU_Regs {
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        unimplemented!()
+        0
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        unimplemented!()
-    }
+    fn mem_write(&mut self, addr: u16, data: u8) {}
 
     fn peek(&self, addr: u16) -> u8 {
-        unimplemented!()
+        0
     }
 }
 
