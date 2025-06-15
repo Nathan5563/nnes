@@ -22,10 +22,9 @@ impl NNES {
         // let apu = APU::new();
 
         let cpu_ref = cpu.clone();
-        ppu.borrow_mut().on_nmi = Some(Box::new(move || {
-            // println!("[CPU] trigger_nmi() called at PC=${:04X}", cpu_ref.borrow_mut().pc);
+        ppu.borrow_mut().on_nmi = Box::new(move || {
             cpu_ref.borrow_mut().nmi_pending = true;
-        }));
+        });
 
         NNES {
             master_clock: 0,

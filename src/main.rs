@@ -13,7 +13,7 @@ use sdl2::{
     event::Event, keyboard::Keycode, pixels::PixelFormatEnum, rect::Rect, render::Canvas,
     video::Window, Sdl,
 };
-use std::{env, process, thread, time::Duration};
+use std::{env, fs::read, process, thread, time::Duration};
 
 macro_rules! die {
     ($msg:expr) => {
@@ -48,8 +48,14 @@ fn init_emu() -> NNES {
     if args.len() != 2 {
         die!("usage: cargo run -- <path to rom>");
     }
-    let rom = match validate_rom(&args[1]) {
+    let rom = match read(args[1].clone()) {
         Ok(rom) => rom,
+        Err(_) => {
+            die!("error: invalid path to rom");
+        }
+    };
+    match validate_rom(&rom) {
+        Ok(_) => {}
         Err(msg) => {
             die!(msg.as_str());
         }
@@ -82,7 +88,7 @@ fn main() -> Result<(), String> {
 
         // 2) Map ppu.output_buffer (u8 indices) -> raw RGB bytes
         texture.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
-            for (i, &palette_idx) in nnes.ppu.borrow_mut().output_buffer.iter().enumerate() {
+            for (i, &palette_idx) in nnes.ppu.borrow_mut().front.iter().enumerate() {
                 let (r, g, b) = NES_PALETTE[palette_idx as usize];
                 let base = i * 3;
                 buffer[base + 0] = r;
@@ -106,7 +112,8 @@ fn main() -> Result<(), String> {
                 break 'running;
             }
         }
-        // Roughly 16 ms/frame; vsync=true will also block
+
+        // 5) Sleep for roughly 16 ms/frame (60 Hz)
         thread::sleep(Duration::from_millis(16));
     }
 
