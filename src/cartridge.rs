@@ -1,7 +1,7 @@
 use crate::utils::{bit_0, bit_1, bit_3, byte_from_nibbles, hi_nibble};
 use std::{fs, iter};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mirroring {
     VERTICAL,
     HORIZONTAL,
@@ -12,13 +12,7 @@ const NES_MAGIC: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 
 // Currently only supports iNES file format, mapper 0.
 // Validation is not rigorous yet, so be careful with rom selection.
-pub fn validate_rom(arg: &String) -> Result<Vec<u8>, String> {
-    // No file
-    let rom = match fs::read(arg) {
-        Ok(rom) => rom,
-        Err(_) => return Err("error: invalid path to rom".to_string()),
-    };
-
+pub fn validate_rom(rom: &Vec<u8>) -> Result<u8, String> {
     // No magic number
     for i in 0..4 {
         if rom[i] != NES_MAGIC[i] {
@@ -39,7 +33,7 @@ pub fn validate_rom(arg: &String) -> Result<Vec<u8>, String> {
         return Err("error: unsupported mapper".to_string());
     }
 
-    Ok(rom)
+    Ok(0)
 }
 
 pub struct Cartridge {
