@@ -33,27 +33,27 @@ impl BusDevice for PPU_Regs {
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        let mut reg = (addr & 0x7) as u8;
         if addr == 0x4014 {
-            reg = 14;
+            // call cpu callback in ppu to handle oam transfer
+            0
+        } else {
+            let reg = (addr % 8) as u8;
+            self.ppu.borrow_mut().reg_read(reg)
         }
-        self.ppu.borrow_mut().reg_read(reg)
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
-        let mut reg = (addr & 0x7) as u8;
         if addr == 0x4014 {
-            reg = 14;
+            // call cpu callback in ppu to handle oam transfer
+        } else {
+            let reg = (addr % 8) as u8;
+            self.ppu.borrow_mut().reg_write(reg, data);
         }
-        self.ppu.borrow_mut().reg_write(reg, data);
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        let mut reg = (addr & 0x7) as u8;
-        if addr == 0x4014 {
-            reg = 14;
-        }
-        self.ppu.borrow().reg_peek(reg)
+        // TODO: reg_peek()? return last written byte? what is important
+        unimplemented!()
     }
 }
 
