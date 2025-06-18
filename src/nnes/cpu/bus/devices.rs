@@ -29,21 +29,30 @@ pub struct PPU_Regs {
 
 impl BusDevice for PPU_Regs {
     fn contains(&self, addr: u16) -> bool {
-        (0x2000..0x4000).contains(&addr)
+        (0x2000..0x4000).contains(&addr) || addr == 0x4014
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        let reg = (addr & 0x7) as u8;
+        let mut reg = (addr & 0x7) as u8;
+        if addr == 0x4014 {
+            reg = 14;
+        }
         self.ppu.borrow_mut().reg_read(reg)
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
-        let reg = (addr & 0x7) as u8;
+        let mut reg = (addr & 0x7) as u8;
+        if addr == 0x4014 {
+            reg = 14;
+        }
         self.ppu.borrow_mut().reg_write(reg, data);
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        let reg = (addr & 0x7) as u8;
+        let mut reg = (addr & 0x7) as u8;
+        if addr == 0x4014 {
+            reg = 14;
+        }
         self.ppu.borrow().reg_peek(reg)
     }
 }

@@ -327,7 +327,8 @@ impl CPU {
             }
             1 => {
                 let _ = self.bus.mem_read(self.store.addr);
-                self.store.addr = self.x.wrapping_add(self.store.addr as u8) as u16;
+                self.store.addr =
+                    self.x.wrapping_add(self.store.addr as u8) as u16;
                 true
             }
             _ => unreachable!(),
@@ -342,7 +343,8 @@ impl CPU {
             }
             1 => {
                 let _ = self.bus.mem_read(self.store.addr);
-                self.store.addr = self.y.wrapping_add(self.store.addr as u8) as u16;
+                self.store.addr =
+                    self.y.wrapping_add(self.store.addr as u8) as u16;
                 true
             }
             _ => unreachable!(),
@@ -359,7 +361,8 @@ impl CPU {
             1 => {
                 self.store.hi = self.bus.mem_read(self.pc);
                 self.pc = self.pc.wrapping_add(1);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
                 true
             }
             _ => unreachable!(),
@@ -378,7 +381,8 @@ impl CPU {
                 self.pc = self.pc.wrapping_add(1);
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.x);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
 
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = match self.ins.unwrap().code {
@@ -413,7 +417,8 @@ impl CPU {
                 self.pc = self.pc.wrapping_add(1);
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
 
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = match self.ins.unwrap().code {
@@ -453,8 +458,10 @@ impl CPU {
                 false
             }
             3 => {
-                self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.hi =
+                    self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
                 true
             }
             _ => unreachable!(),
@@ -473,10 +480,12 @@ impl CPU {
                 false
             }
             2 => {
-                self.store.hi = self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
+                self.store.hi =
+                    self.bus.mem_read(self.store.data.wrapping_add(1) as u16);
                 self.store.data = self.store.lo;
                 self.store.lo = self.store.lo.wrapping_add(self.y);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
 
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = match self.ins.unwrap().code {
@@ -544,7 +553,8 @@ impl CPU {
             }
             5 => {
                 self.store.hi = self.bus.mem_read(self.store.vector + 1);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
                 self.pc = self.store.addr;
 
                 self.software_interrupt = false;
@@ -585,7 +595,9 @@ impl CPU {
 
     fn bpl(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            0 | 1 | 2 => self.branch(!self.p.contains(Flags::NEGATIVE), subcycle),
+            0 | 1 | 2 => {
+                self.branch(!self.p.contains(Flags::NEGATIVE), subcycle)
+            }
             _ => unreachable!(),
         }
     }
@@ -665,8 +677,10 @@ impl CPU {
                     Flags::INTERRUPT_DISABLE,
                     flags.contains(Flags::INTERRUPT_DISABLE),
                 );
-                self.p
-                    .set(Flags::DECIMAL_MODE, flags.contains(Flags::DECIMAL_MODE));
+                self.p.set(
+                    Flags::DECIMAL_MODE,
+                    flags.contains(Flags::DECIMAL_MODE),
+                );
                 self.p.set(Flags::OVERFLOW, flags.contains(Flags::OVERFLOW));
                 self.p.set(Flags::NEGATIVE, flags.contains(Flags::NEGATIVE));
                 true
@@ -677,7 +691,9 @@ impl CPU {
 
     fn bmi(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            0 | 1 | 2 => self.branch(self.p.contains(Flags::NEGATIVE), subcycle),
+            0 | 1 | 2 => {
+                self.branch(self.p.contains(Flags::NEGATIVE), subcycle)
+            }
             _ => unreachable!(),
         }
     }
@@ -706,18 +722,22 @@ impl CPU {
                     Flags::INTERRUPT_DISABLE,
                     flags.contains(Flags::INTERRUPT_DISABLE),
                 );
-                self.p
-                    .set(Flags::DECIMAL_MODE, flags.contains(Flags::DECIMAL_MODE));
+                self.p.set(
+                    Flags::DECIMAL_MODE,
+                    flags.contains(Flags::DECIMAL_MODE),
+                );
                 self.p.set(Flags::OVERFLOW, flags.contains(Flags::OVERFLOW));
                 self.p.set(Flags::NEGATIVE, flags.contains(Flags::NEGATIVE));
                 false
             }
             3 => {
-                self.pc = u16::from_le_bytes([self.stack_pop(), hi_byte(self.pc)]);
+                self.pc =
+                    u16::from_le_bytes([self.stack_pop(), hi_byte(self.pc)]);
                 false
             }
             4 => {
-                self.pc = u16::from_le_bytes([lo_byte(self.pc), self.stack_pop()]);
+                self.pc =
+                    u16::from_le_bytes([lo_byte(self.pc), self.stack_pop()]);
                 true
             }
             _ => unreachable!(),
@@ -761,7 +781,8 @@ impl CPU {
             }
             1 => {
                 self.store.hi = self.bus.mem_read(self.pc);
-                self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
                 if self.ins.unwrap().mode == AddressingMode::ABS {
                     self.pc = self.store.addr;
                     true
@@ -789,7 +810,9 @@ impl CPU {
 
     fn bvc(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            0 | 1 | 2 => self.branch(!self.p.contains(Flags::OVERFLOW), subcycle),
+            0 | 1 | 2 => {
+                self.branch(!self.p.contains(Flags::OVERFLOW), subcycle)
+            }
             _ => unreachable!(),
         }
     }
@@ -863,7 +886,9 @@ impl CPU {
 
     fn bvs(&mut self, subcycle: u8) -> bool {
         match subcycle {
-            0 | 1 | 2 => self.branch(self.p.contains(Flags::OVERFLOW), subcycle),
+            0 | 1 | 2 => {
+                self.branch(self.p.contains(Flags::OVERFLOW), subcycle)
+            }
             _ => unreachable!(),
         }
     }
@@ -1142,7 +1167,8 @@ impl CPU {
                 }
                 1 => {
                     self.set_result();
-                    self.store.data = self.shift_data(left, with_carry, cf, self.store.data);
+                    self.store.data =
+                        self.shift_data(left, with_carry, cf, self.store.data);
                     false
                 }
                 2 => {
@@ -1155,7 +1181,13 @@ impl CPU {
         }
     }
 
-    fn shift_data(&mut self, left: bool, with_carry: bool, cf: bool, mut data: u8) -> u8 {
+    fn shift_data(
+        &mut self,
+        left: bool,
+        with_carry: bool,
+        cf: bool,
+        mut data: u8,
+    ) -> u8 {
         if left {
             self.p.set(Flags::CARRY, bit_7(data) != 0);
             data <<= 1;
@@ -1188,8 +1220,12 @@ impl CPU {
             }
             1 => {
                 let _ = self.bus.mem_read(self.pc);
-                self.store.addr = self.pc.wrapping_add(self.store.offset as i16 as u16);
-                self.pc = u16::from_le_bytes([lo_byte(self.store.addr), hi_byte(self.pc)]);
+                self.store.addr =
+                    self.pc.wrapping_add(self.store.offset as i16 as u16);
+                self.pc = u16::from_le_bytes([
+                    lo_byte(self.store.addr),
+                    hi_byte(self.pc),
+                ]);
                 if hi_byte(self.pc) != hi_byte(self.store.addr) {
                     self.required_ins_ticks += 1;
                 }
@@ -1206,7 +1242,9 @@ impl CPU {
 
     fn get_operand(&mut self) -> u8 {
         match self.ins.unwrap().mode {
-            AddressingMode::IMP | AddressingMode::ACC => self.bus.mem_read(self.pc),
+            AddressingMode::IMP | AddressingMode::ACC => {
+                self.bus.mem_read(self.pc)
+            }
             AddressingMode::IMM | AddressingMode::REL => {
                 self.pc = self.pc.wrapping_add(1);
                 self.bus.mem_read(self.pc.wrapping_sub(1))

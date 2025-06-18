@@ -10,8 +10,8 @@ mod utils;
 use cartridge::{validate_rom, Cartridge};
 use nnes::NNES;
 use sdl2::{
-    event::Event, keyboard::Keycode, pixels::PixelFormatEnum, rect::Rect, render::Canvas,
-    video::Window, Sdl,
+    event::Event, keyboard::Keycode, pixels::PixelFormatEnum, rect::Rect,
+    render::Canvas, video::Window, Sdl,
 };
 use std::{env, fs::read, process, thread, time::Duration};
 
@@ -75,20 +75,21 @@ fn main() -> Result<(), String> {
 
     let mut nnes = init_emu();
 
-    // Master-cycles to tick per frame:
-    // NES CPU runs ~1.7898 MHz, frame rate ~60.1 Hz ⇒ ~29780 CPU ticks/frame.
-    // You tick CPU once per 12 master cycles ⇒ master_cycles_per_frame ≈ 29780 * 12.
-    let master_cycles_per_frame = 29780 * 12;
+    // NES CPU runs ~1.7898 MHz, frame rate ~60.1 Hz: ~29780 CPU ticks/frame.
+    // Tick CPU once per 12 master cycles: 29780 * 12 = ~357360 master cycles per frame.
+    let master_cycles_per_frame = 357360;
     let mut event_pump = sdl.event_pump()?;
     'running: loop {
-        // 1) Advance the emu
+        // 1) Tick the emulator
         for _ in 0..master_cycles_per_frame {
             nnes.tick();
         }
 
         // 2) Map ppu.output_buffer (u8 indices) -> raw RGB bytes
         texture.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
-            for (i, &palette_idx) in nnes.ppu.borrow_mut().front.iter().enumerate() {
+            for (i, &palette_idx) in
+                nnes.ppu.borrow_mut().front.iter().enumerate()
+            {
                 let (r, g, b) = NES_PALETTE[palette_idx as usize];
                 let base = i * 3;
                 buffer[base + 0] = r;
@@ -113,7 +114,7 @@ fn main() -> Result<(), String> {
             }
         }
 
-        // 5) Sleep for roughly 16 ms/frame (60 Hz)
+        // 5) Sleep for 16 ms/frame
         thread::sleep(Duration::from_millis(16));
     }
 
