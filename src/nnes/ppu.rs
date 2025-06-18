@@ -184,32 +184,21 @@ impl PPU {
 
     pub fn tick(&mut self) {
         //———————————————————————————————————————————————————————————————————
-        //  TODO: Handle NMI logic
+        //  NMI -> Pre-render -> {Render AND Evaluate} -> VBlank
         //———————————————————————————————————————————————————————————————————
+        // NMI polling
+        self.handle_nmi();
 
-        //———————————————————————————————————————————————————————————————————
-        //  Pre-render line logic
-        //———————————————————————————————————————————————————————————————————
+        // Pre-render line
         self.handle_pre_render();
 
-        //———————————————————————————————————————————————————————————————————
-        //  Current scanline rendering logic
-        //———————————————————————————————————————————————————————————————————
-        if self
-            .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
-        {
-            self.handle_render();
-        }
+        // Current scanline rendering
+        self.handle_render();
 
-        //———————————————————————————————————————————————————————————————————
-        //  Next scanline evaluation logic
-        //———————————————————————————————————————————————————————————————————
+        // Next scanline evaluation
         self.handle_evaluation();
 
-        //———————————————————————————————————————————————————————————————————
-        //  VBlank line logic
-        //———————————————————————————————————————————————————————————————————
+        // VBlank line
         self.handle_vblank();
 
         //———————————————————————————————————————————————————————————————————
@@ -241,54 +230,68 @@ impl PPU {
         addr
     }
 
+    fn handle_nmi(&mut self) {
+        // TODO
+    }
+
     fn handle_pre_render(&mut self) {
-        if self.scanline == PRE_RENDER_LINE && self.cycle == 1 {
-            self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
+        if self.scanline == PRE_RENDER_LINE {
+            if self.cycle == 1 {
+                self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
 
-            // TODO: figure out NMI logic, if any
+                // TODO: figure out NMI logic, if any
 
-            self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
-            self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
+                self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
+                self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
+            }
+
+            if self
+                .ppu_mask
+                .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
+                && (280..=304).contains(&self.cycle)
+            {
+                // TODO: vert(v) = vert(t)
+            }
+
+            self.handle_fetch();
         }
     }
 
     fn handle_render(&mut self) {
-        if VISIBLE_LINE.contains(&self.scanline)
-            && VISIBLE_CYCLE.contains(&self.cycle)
+        if self
+            .ppu_mask
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
+            && VISIBLE_LINE.contains(&self.scanline)
         {
-            self.draw_pixel();
-        }
-
-        if self.scanline == PRE_RENDER_LINE
-            || VISIBLE_LINE.contains(&self.scanline)
-        {
-            if PRE_FETCH_CYCLE.contains(&self.cycle)
-                || VISIBLE_CYCLE.contains(&self.cycle)
-            {
-                // TODO: figure out internal tile data
-                match self.cycle % 8 {
-                    1 => self.fetch_nametable(),
-                    3 => self.fetch_attribute(),
-                    5 => self.fetch_tile_lo(),
-                    7 => self.fetch_tile_hi(),
-                    0 => {
-                        // TODO: inc(hori(v))
-                    }
-                    _ => {}
-                }
-
-                if self.cycle == 256 {
-                    // TODO: inc(vert(v))
-                }
-            } else if self.cycle == 257 {
-                // TODO: hori(v) = hori(t)
+            if VISIBLE_CYCLE.contains(&self.cycle) {
+                self.draw_pixel();
             }
-        }
 
-        if self.scanline == PRE_RENDER_LINE
-            && (280..=304).contains(&self.cycle)
+            self.handle_fetch();
+        }
+    }
+
+    fn handle_fetch(&mut self) {
+        if PRE_FETCH_CYCLE.contains(&self.cycle)
+            || VISIBLE_CYCLE.contains(&self.cycle)
         {
-            // TODO: vert(v) = vert(t)
+            // TODO: figure out internal tile data
+            match self.cycle % 8 {
+                1 => self.fetch_nametable(),
+                3 => self.fetch_attribute(),
+                5 => self.fetch_tile_lo(),
+                7 => self.fetch_tile_hi(),
+                0 => {
+                    // TODO: inc(hori(v))
+                }
+                _ => {}
+            }
+
+            if self.cycle == 256 {
+                // TODO: inc(vert(v))
+            }
+        } else if self.cycle == 257 {
+            // TODO: hori(v) = hori(t)
         }
     }
 
