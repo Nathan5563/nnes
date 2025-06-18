@@ -1,0 +1,11 @@
+Crucial (immediate next steps)
+- Implement PPU
+- Implement APU
+
+Important (do in parallel or in the near future)
+- Make egui debugger containing cpu/ppu/apu states
+- Implement unofficial opcodes
+- Implement more mappers
+
+Nice to have (perfect emulator accuracy)
+- Implement reset interrupt instead of initialization function
