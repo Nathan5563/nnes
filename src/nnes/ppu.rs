@@ -1,5 +1,5 @@
-mod registers;
-mod render;
+mod core;
+mod io;
 
 use crate::cartridge::{Cartridge, Mirroring};
 
@@ -9,6 +9,12 @@ const NAMETABLE_START: u16 = 0x2000;
 const NAMETABLE_END: u16 = 0x3EFF;
 const PALETTE_START: u16 = 0x3F00;
 const PALETTE_END: u16 = 0x3FFF;
+
+const PRE_RENDER_LINE: u16 = 261;
+const VISIBLE_LINE: std::ops::RangeInclusive<u16> = 0..=239;
+
+const PRE_FETCH_CYCLE: std::ops::RangeInclusive<u16> = 321..=336;
+const VISIBLE_CYCLE: std::ops::RangeInclusive<u16> = 1..=256;
 
 bitflags! {
     pub struct PPUCTRL: u8 {
@@ -24,8 +30,8 @@ bitflags! {
 
     pub struct PPUMASK: u8 {
         const GRAYSCALE = 0b0000_0001;
-        const CLIP_BACKGROUND = 0b0000_0010;    // 1: No clipping
-        const CLIP_SPRITES = 0b0000_0100;       // 1: No clipping
+        const CLIP_BACKGROUND = 0b0000_0010;    // 1: no clipping
+        const CLIP_SPRITES = 0b0000_0100;       // 1: no clipping
         const SHOW_BACKGROUND = 0b0000_1000;
         const SHOW_SPRITES = 0b0001_0000;
         const EMPH_RED = 0b0010_0000;
@@ -59,11 +65,11 @@ pub struct PPU {
     chr_rom: Vec<u8>,
     vram: [u8; 0x800],
     palette: [u8; 0x20],
-    oam: [u8; 64 * 4],
+    oam: [u8; 64 * 4], // 64 sprites of size 4 bytes each
+    secondary_oam: [u8; 8 * 4],
 
-    // Buses
-    address_bus: u8,
-    data_bus: u8,
+    // Open bus
+    open_bus: u8,
 
     // Image buffers
     pub front: [u8; 256 * 240],
@@ -101,19 +107,15 @@ impl PPU {
             vram: [0; 0x800],
             palette: [0; 0x20],
             oam: [0; 64 * 4],
-
-            address_bus: 0,
-            data_bus: 0,
-
+            secondary_oam: [0; 8 * 4],
+            open_bus: 0,
             front: [0; 256 * 240],
             back: [0; 256 * 240],
-
             ppu_ctrl: PPUCTRL::empty(),
             ppu_mask: PPUMASK::empty(),
             ppu_status: PPUSTATUS::empty(),
             oam_addr: 0,
-            read_buffer: 0xFF,
-
+            read_buffer: 0,
             on_nmi: Box::new(|| {}),
             mirroring: cartridge.mirroring,
             cycle: 0,
@@ -125,7 +127,6 @@ impl PPU {
                 tile_hi_byte: 0,
                 tile_addr: 0,
             },
-
             total_cycles: 0,
             total_scanlines: 0,
             total_frames: 0,
@@ -140,9 +141,19 @@ impl PPU {
     fn mem_read(&self, mut addr: u16) -> u8 {
         addr &= 0x3FFF;
         match addr {
-            PATTERN_TABLE_START..=PATTERN_TABLE_END => {}
-            NAMETABLE_START..=NAMETABLE_END => {}
-            PALETTE_START..=PALETTE_END => {}
+            PATTERN_TABLE_START..=PATTERN_TABLE_END => {
+                self.chr_rom[addr as usize]
+            }
+            NAMETABLE_START..=NAMETABLE_END => {
+                addr = self.get_vram_addr(addr);
+                assert!(addr < 0x800);
+                self.vram[addr as usize]
+            }
+            PALETTE_START..=PALETTE_END => {
+                addr = self.get_palette_addr(addr);
+                assert!(addr < 0x20);
+                self.palette[addr as usize]
+            }
             _ => unreachable!(),
         }
     }
@@ -150,9 +161,19 @@ impl PPU {
     fn mem_write(&mut self, mut addr: u16, data: u8) {
         addr &= 0x3FFF;
         match addr {
-            PATTERN_TABLE_START..=PATTERN_TABLE_END => {}
-            NAMETABLE_START..=NAMETABLE_END => {}
-            PALETTE_START..=PALETTE_END => {}
+            PATTERN_TABLE_START..=PATTERN_TABLE_END => {
+                self.chr_rom[addr as usize] = data
+            }
+            NAMETABLE_START..=NAMETABLE_END => {
+                addr = self.get_vram_addr(addr);
+                assert!(addr < 0x800);
+                self.vram[addr as usize] = data;
+            }
+            PALETTE_START..=PALETTE_END => {
+                addr = self.get_palette_addr(addr);
+                assert!(addr < 0x20);
+                self.palette[addr as usize] = data;
+            }
             _ => unreachable!(),
         };
     }
@@ -162,40 +183,38 @@ impl PPU {
     }
 
     pub fn tick(&mut self) {
-        //————————————————————————————————————————————————————————————————
-        //  TODO: Work for current cycle
-        //————————————————————————————————————————————————————————————————
-        let prerender_line = self.scanline == 261;
-        let visible_line = (0..=239).contains(&self.scanline);
-        let fetch_line = prerender_line || visible_line;
-        let vblank_line = (241..=260).contains(&self.scanline);
-        let fetch_cycle = (1..=340).contains(&self.cycle);
-        let can_render = self
+        //———————————————————————————————————————————————————————————————————
+        //  TODO: Handle NMI logic
+        //———————————————————————————————————————————————————————————————————
+
+        //———————————————————————————————————————————————————————————————————
+        //  Pre-render line logic
+        //———————————————————————————————————————————————————————————————————
+        self.handle_pre_render();
+
+        //———————————————————————————————————————————————————————————————————
+        //  Current scanline rendering logic
+        //———————————————————————————————————————————————————————————————————
+        if self
             .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES);
-
-        // Handle nmi polling here
-
-        if can_render {
-            if fetch_line && fetch_cycle {
-                match self.cycle & 0x7 {
-                    1 => self.fetch_nametable(),
-                    3 => self.fetch_attribute(),
-                    5 => self.fetch_tile_lo(),
-                    7 => self.fetch_tile_hi(),
-                    _ => {}
-                }
-            } else if vblank_line {
-                if self.cycle == 1 {
-                    self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
-                    (self.on_nmi.as_mut())();
-                }
-            }
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
+        {
+            self.handle_render();
         }
 
-        //————————————————————————————————————————————————————————————————
+        //———————————————————————————————————————————————————————————————————
+        //  Next scanline evaluation logic
+        //———————————————————————————————————————————————————————————————————
+        self.handle_evaluation();
+
+        //———————————————————————————————————————————————————————————————————
+        //  VBlank line logic
+        //———————————————————————————————————————————————————————————————————
+        self.handle_vblank();
+
+        //———————————————————————————————————————————————————————————————————
         //  Timing calculations
-        //————————————————————————————————————————————————————————————————
+        //———————————————————————————————————————————————————————————————————
         self.update_timing();
     }
 
@@ -216,24 +235,118 @@ impl PPU {
 
     fn get_palette_addr(&self, mut addr: u16) -> u16 {
         addr = (addr - 0x3F00) & 0x1F;
-        if addr >= 0x10 && addr & 0x3 == 0 {
-            addr -= 0x10;
+        if addr >= 16 && addr % 4 == 0 {
+            addr -= 16;
         }
         addr
+    }
+
+    fn handle_pre_render(&mut self) {
+        if self.scanline == PRE_RENDER_LINE && self.cycle == 1 {
+            self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
+
+            // TODO: figure out NMI logic, if any
+
+            self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
+            self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
+        }
+    }
+
+    fn handle_render(&mut self) {
+        if VISIBLE_LINE.contains(&self.scanline)
+            && VISIBLE_CYCLE.contains(&self.cycle)
+        {
+            self.draw_pixel();
+        }
+
+        if self.scanline == PRE_RENDER_LINE
+            || VISIBLE_LINE.contains(&self.scanline)
+        {
+            if PRE_FETCH_CYCLE.contains(&self.cycle)
+                || VISIBLE_CYCLE.contains(&self.cycle)
+            {
+                // TODO: figure out internal tile data
+                match self.cycle % 8 {
+                    1 => self.fetch_nametable(),
+                    3 => self.fetch_attribute(),
+                    5 => self.fetch_tile_lo(),
+                    7 => self.fetch_tile_hi(),
+                    0 => {
+                        // TODO: inc(hori(v))
+                    }
+                    _ => {}
+                }
+
+                if self.cycle == 256 {
+                    // TODO: inc(vert(v))
+                }
+            } else if self.cycle == 257 {
+                // TODO: hori(v) = hori(t)
+            }
+        }
+
+        if self.scanline == PRE_RENDER_LINE
+            && (280..=304).contains(&self.cycle)
+        {
+            // TODO: vert(v) = vert(t)
+        }
+    }
+
+    fn handle_evaluation(&mut self) {
+        if VISIBLE_LINE.contains(&self.scanline) {
+            match self.cycle {
+                1..=64 => {
+                    // clear secondary OAM
+                    // hack memory accesses to simulate read -> write
+                    // one cycle "read", one cycle write
+                    let idx = if (self.cycle - 1) % 2 == 0 {
+                        Some((self.cycle - 1) / 2)
+                    } else {
+                        None
+                    };
+                    if let Some(idx) = idx {
+                        self.secondary_oam[idx as usize] = 0xFF;
+                    }
+                }
+                65..=256 => {
+                    // TODO: perform sprite fetches
+                }
+                257..=320 => {
+                    // TODO: check sprite overflow
+                }
+                321..=340 => {
+                    // TODO: initialize background render pipeline
+                }
+                _ => unreachable!(),
+            }
+        } else if self.scanline == PRE_RENDER_LINE {
+            // TODO: handle pre-render line sprite fetching
+        }
+    }
+
+    fn handle_vblank(&mut self) {
+        if self.scanline == 241 && self.cycle == 1 {
+            self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
+            if self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK) {
+                (self.on_nmi.as_mut())();
+            }
+        }
     }
 
     fn update_timing(&mut self) {
         self.cycle += 1;
         self.total_cycles += 1;
 
-        // Skip the last cycle of the pre-render line on odd frames
-        if (self.f == 1 && self.scanline == 261 && self.cycle == 340) || self.cycle == 341 {
+        // skip the last cycle of the pre-render line on odd frames
+        if (self.f == 1 && self.scanline == 261 && self.cycle == 340)
+            || self.cycle == 341
+        {
             self.cycle = 0;
             self.scanline += 1;
             self.total_scanlines += 1;
         }
 
-        // Finalize frame
+        // finalize frame
         if self.scanline == 262 {
             self.scanline = 0;
             self.f ^= 1;
