@@ -11,10 +11,10 @@ const PALETTE_START: u16 = 0x3F00;
 const PALETTE_END: u16 = 0x3FFF;
 
 const PRE_RENDER_LINE: u16 = 261;
-const VISIBLE_LINE: std::ops::RangeInclusive<u16> = 0..=239;
+const VISIBLE_LINES: std::ops::RangeInclusive<u16> = 0..=239;
 
-const PRE_FETCH_CYCLE: std::ops::RangeInclusive<u16> = 321..=336;
-const VISIBLE_CYCLE: std::ops::RangeInclusive<u16> = 1..=256;
+const PRE_FETCH_CYCLES: std::ops::RangeInclusive<u16> = 321..=336;
+const VISIBLE_CYCLES: std::ops::RangeInclusive<u16> = 1..=256;
 
 bitflags! {
     pub struct PPUCTRL: u8 {
@@ -81,13 +81,15 @@ pub struct PPU {
     ppu_status: PPUSTATUS,
     oam_addr: u8,
     read_buffer: u8,
+    pub on_nmi: Box<dyn FnMut()>,
+    pub on_oam_dma: Box<dyn FnMut()>,
 
     // PPU metadata
-    pub on_nmi: Box<dyn FnMut()>,
     mirroring: Mirroring,
     pub cycle: u16,
     pub scanline: u16,
     store: PPUStore,
+    nmi_prev: bool,
 
     // Debugging tools
     total_cycles: u64,
@@ -117,6 +119,7 @@ impl PPU {
             oam_addr: 0,
             read_buffer: 0,
             on_nmi: Box::new(|| {}),
+            on_oam_dma: Box::new(|| {}),
             mirroring: cartridge.mirroring,
             cycle: 0,
             scanline: 0,
@@ -127,6 +130,7 @@ impl PPU {
                 tile_hi_byte: 0,
                 tile_addr: 0,
             },
+            nmi_prev: false,
             total_cycles: 0,
             total_scanlines: 0,
             total_frames: 0,
@@ -184,22 +188,24 @@ impl PPU {
 
     pub fn tick(&mut self) {
         //———————————————————————————————————————————————————————————————————
-        //  NMI -> Pre-render -> {Render AND Evaluate} -> VBlank
+        //  Pre-render -> {Render AND Evaluate} -> VBlank -> NMI
         //———————————————————————————————————————————————————————————————————
+        if self.scanline == PRE_RENDER_LINE {
+            self.handle_pre_render_line();
+        }
+
+        if VISIBLE_LINES.contains(&self.scanline) {
+            // current scanline rendering
+            self.handle_render_lines();
+            // next scanline evaluation
+            self.handle_evaluation_lines();
+        }
+
+        // vblank entrance/exit and NMI detection
+        self.handle_vblank_lines();
+
         // NMI polling
-        self.handle_nmi();
-
-        // Pre-render line
-        self.handle_pre_render();
-
-        // Current scanline rendering
-        self.handle_render();
-
-        // Next scanline evaluation
-        self.handle_evaluation();
-
-        // VBlank line
-        self.handle_vblank();
+        self.handle_nmi_polling();
 
         //———————————————————————————————————————————————————————————————————
         //  Timing calculations
@@ -230,110 +236,105 @@ impl PPU {
         addr
     }
 
-    fn handle_nmi(&mut self) {
-        // TODO
-    }
-
-    fn handle_pre_render(&mut self) {
-        if self.scanline == PRE_RENDER_LINE {
-            if self.cycle == 1 {
-                self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
-
-                // TODO: figure out NMI logic, if any
-
-                self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
-                self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
-            }
-
-            if self
-                .ppu_mask
-                .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
-                && (280..=304).contains(&self.cycle)
-            {
-                // TODO: vert(v) = vert(t)
-            }
-
-            self.handle_fetch();
-        }
-    }
-
-    fn handle_render(&mut self) {
+    fn handle_pre_render_line(&mut self) {
         if self
             .ppu_mask
             .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
-            && VISIBLE_LINE.contains(&self.scanline)
+            && (280..=304).contains(&self.cycle)
         {
-            if VISIBLE_CYCLE.contains(&self.cycle) {
+            self.copy_y();
+        }
+
+        self.handle_fetch_cycles();
+
+        // TODO: handle pre-render line evaluation
+    }
+
+    fn handle_render_lines(&mut self) {
+        if self
+            .ppu_mask
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
+        {
+            if VISIBLE_CYCLES.contains(&self.cycle) {
                 self.draw_pixel();
             }
 
-            self.handle_fetch();
+            self.handle_fetch_cycles();
         }
     }
 
-    fn handle_fetch(&mut self) {
-        if PRE_FETCH_CYCLE.contains(&self.cycle)
-            || VISIBLE_CYCLE.contains(&self.cycle)
+    fn handle_fetch_cycles(&mut self) {
+        if PRE_FETCH_CYCLES.contains(&self.cycle)
+            || VISIBLE_CYCLES.contains(&self.cycle)
         {
-            // TODO: figure out internal tile data
+            // TODO: figure out internal tile data storage
             match self.cycle % 8 {
                 1 => self.fetch_nametable(),
                 3 => self.fetch_attribute(),
                 5 => self.fetch_tile_lo(),
                 7 => self.fetch_tile_hi(),
-                0 => {
-                    // TODO: inc(hori(v))
-                }
+                0 => self.increment_x(),
                 _ => {}
             }
 
             if self.cycle == 256 {
-                // TODO: inc(vert(v))
+                self.increment_y();
             }
         } else if self.cycle == 257 {
-            // TODO: hori(v) = hori(t)
+            self.copy_x();
         }
     }
 
-    fn handle_evaluation(&mut self) {
-        if VISIBLE_LINE.contains(&self.scanline) {
-            match self.cycle {
-                1..=64 => {
-                    // clear secondary OAM
-                    // hack memory accesses to simulate read -> write
-                    // one cycle "read", one cycle write
-                    let idx = if (self.cycle - 1) % 2 == 0 {
-                        Some((self.cycle - 1) / 2)
-                    } else {
-                        None
-                    };
-                    if let Some(idx) = idx {
-                        self.secondary_oam[idx as usize] = 0xFF;
-                    }
+    fn handle_evaluation_lines(&mut self) {
+        match self.cycle {
+            1..=64 => {
+                // clear secondary OAM
+                // hack memory accesses to simulate read -> write
+                // one cycle "read", one cycle write
+                let idx = if (self.cycle - 1) % 2 == 0 {
+                    Some((self.cycle - 1) / 2)
+                } else {
+                    None
+                };
+                if let Some(idx) = idx {
+                    self.secondary_oam[idx as usize] = 0xFF;
                 }
-                65..=256 => {
-                    // TODO: perform sprite fetches
-                }
-                257..=320 => {
-                    // TODO: check sprite overflow
-                }
-                321..=340 => {
-                    // TODO: initialize background render pipeline
-                }
-                _ => unreachable!(),
             }
-        } else if self.scanline == PRE_RENDER_LINE {
-            // TODO: handle pre-render line sprite fetching
+            65..=256 => {
+                // TODO: perform sprite evaluation
+            }
+            257..=320 => {
+                // TODO: perform sprite fetches
+            }
+            321..=340 => {
+                // TODO: initialize background render pipeline
+            }
+            _ => unreachable!(),
         }
     }
 
-    fn handle_vblank(&mut self) {
+    fn handle_vblank_lines(&mut self) {
         if self.scanline == 241 && self.cycle == 1 {
+            // enter VBlank
             self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
-            if self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK) {
-                (self.on_nmi.as_mut())();
-            }
         }
+
+        if self.scanline == PRE_RENDER_LINE && self.cycle == 1 {
+            // exit VBlank
+            self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
+            self.nmi_prev = false;
+            self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
+            self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
+        }
+    }
+
+    fn handle_nmi_polling(&mut self) {
+        let nmi_now = self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK)
+            && self.ppu_status.contains(PPUSTATUS::IS_VBLANK);
+        if nmi_now && !self.nmi_prev {
+            (self.on_nmi.as_mut())();
+        }
+        self.nmi_prev = nmi_now;
     }
 
     fn update_timing(&mut self) {

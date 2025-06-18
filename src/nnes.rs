@@ -21,9 +21,15 @@ impl NNES {
         let cpu = Rc::new(RefCell::new(CPU::new(bus)));
         // let apu = APU::new();
 
-        let cpu_ref = cpu.clone();
+        // Give PPU NMI callback access to CPU NMI field
+        let cpu_ref_for_nmi = cpu.clone();
         ppu.borrow_mut().on_nmi = Box::new(move || {
-            cpu_ref.borrow_mut().nmi_pending = true;
+            cpu_ref_for_nmi.borrow_mut().nmi_pending = true;
+        });
+        // Give PPU OAM DMA callback access to CPU OAM DMA field
+        let cpu_ref_for_oam_dma = cpu.clone();
+        ppu.borrow_mut().on_oam_dma = Box::new(move || {
+            // TODO: set CPU field to indicate OAMDMA
         });
 
         NNES {

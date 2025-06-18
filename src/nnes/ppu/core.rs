@@ -63,4 +63,20 @@ impl PPU {
         // final address: prev lo address + 8 for hi byte
         self.store.tile_hi_byte = self.mem_read(self.store.tile_addr + 8);
     }
+
+    pub fn copy_y(&mut self) {
+        // TODO: vert(v) = vert(t)
+    }
+
+    pub fn copy_x(&mut self) {
+        // TODO: hori(v) = hori(t)
+    }
+
+    pub fn increment_x(&mut self) {
+        // TODO: inc(hori(v))
+    }
+
+    pub fn increment_y(&mut self) {
+        // TODO: inc(vert(v))
+    }
 }

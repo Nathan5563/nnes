@@ -6,9 +6,16 @@ use crate::utils::{
 impl PPU {
     // 0x2000: PPUCTRL - W
     fn write_ppu_ctrl(&mut self, data: u8) {
+        let prev = self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK);
         self.ppu_ctrl = PPUCTRL::from_bits_truncate(data);
 
-        // TODO: figure out NMI logic regarding PPUCTRL::NMI_ON_VBLANK
+        // fire an NMI if NMI_ON_VBLANK is set during VBlank
+        let now = self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK)
+            && self.ppu_status.contains(PPUSTATUS::IS_VBLANK);
+        if !prev && now {
+            (self.on_nmi.as_mut())();
+            self.nmi_prev = true;
+        }
 
         // get nametable select from data[1:0]: ... NN ..... .....
         let nametable = (data as u16 & 0b11) << 10;
@@ -24,9 +31,6 @@ impl PPU {
     // 0x2002: PPUSTATUS - R
     fn read_ppu_status(&mut self) -> u8 {
         let bit_7 = self.ppu_status.contains(PPUSTATUS::IS_VBLANK) as u8;
-
-        // TODO: figure out NMI logic regarding PPUSTATUS::IS_VBLANK
-
         let bit_6 = self.ppu_status.contains(PPUSTATUS::SPRITE0_HIT) as u8;
         let bit_5 = self.ppu_status.contains(PPUSTATUS::SPRITE_OVERFLOW) as u8;
         let bit_4 = bit_4(self.open_bus);
@@ -38,6 +42,7 @@ impl PPU {
         // side effects of reading PPUSTATUS
         self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
         self.w = 0;
+        self.nmi_prev = false;
 
         byte_from_bits(bit_7, bit_6, bit_5, bit_4, bit_3, bit_2, bit_1, bit_0)
     }
@@ -122,11 +127,6 @@ impl PPU {
         self.increment_v();
     }
 
-    // 0x4014: OAMDMA - W
-    fn write_oam_dma(&mut self, data: u8) {
-        // TODO
-    }
-
     // Public register APIs
     pub fn reg_read(&mut self, reg: u8) -> u8 {
         let data = match reg {
@@ -148,15 +148,9 @@ impl PPU {
             5 => self.write_ppu_scroll(data),
             6 => self.write_ppu_addr(data),
             7 => self.write_ppu_data(data),
-            14 => self.write_oam_dma(data),
             _ => {}
         }
         self.open_bus = data;
-    }
-
-    pub fn reg_peek(&self, reg: u8) -> u8 {
-        // TODO: figure out what information would be important for debugging
-        unimplemented!()
     }
 
     // Helpers
