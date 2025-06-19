@@ -53,7 +53,15 @@ impl BusDevice for PPU_Regs {
 
     fn peek(&self, addr: u16) -> u8 {
         // TODO: reg_peek()? return last written byte? what is important
-        unimplemented!()
+        0
+    }
+
+    fn ppu_debug_cycle(&self) -> Option<u16> {
+        Some(self.ppu.borrow_mut().cycle)
+    }
+
+    fn ppu_debug_scanline(&self) -> Option<u16> {
+        Some(self.ppu.borrow_mut().scanline)
     }
 }
 

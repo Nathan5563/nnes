@@ -276,199 +276,218 @@ impl CPU {
     }
 
     // // Debugging tools
-    // pub fn trace(&mut self) {
-    //     let data = self.bus.peek(self.pc);
+    pub fn trace(&mut self) {
+        let data = self.bus.peek(self.pc);
 
-    //     let ins;
-    //     if let Some(opcode) = opcodes_list[data as usize].as_ref() {
-    //         ins = Some(opcode);
-    //     } else {
-    //         println!("unknown opcode: {:02x}", data);
-    //         unimplemented!();
-    //     }
+        let ins;
+        if let Some(opcode) = opcodes_list[data as usize].as_ref() {
+            ins = Some(opcode);
+        } else {
+            println!("unknown opcode: {:02x}", data);
+            unimplemented!();
+        }
 
-    //     let mut buf = String::new();
+        let mut buf = String::new();
 
-    //     buf.push_str(format!("{:04X}", self.pc).as_str());
-    //     buf.push_str("  ");
+        buf.push_str(format!("{:04X}", self.pc).as_str());
+        buf.push_str("  ");
 
-    //     buf.push_str(format!("{:02X}", ins.unwrap().code).as_str());
-    //     buf.push(' ');
+        buf.push_str(format!("{:02X}", ins.unwrap().code).as_str());
+        buf.push(' ');
 
-    //     let mode = ins.unwrap().mode;
-    //     let instruction = ins.unwrap().name.as_str();
-    //     let num_bytes = ins.unwrap().bytes;
-    //     let mut lo = 0;
-    //     let mut hi = 0;
-    //     let mut asm = String::from(instruction);
-    //     asm.push(' ');
-    //     match mode {
-    //         AddressingMode::IMP => {
-    //             asm.push_str("                            ");
-    //         }
-    //         AddressingMode::ACC => {
-    //             asm.push('A');
-    //             asm.push_str("                           ");
-    //         }
-    //         AddressingMode::IMM => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             asm.push_str(format!("#${:02X}", lo).as_str());
-    //             asm.push_str("                        ");
-    //         }
-    //         AddressingMode::ZPG => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             asm.push_str(format!("${:02X} ", lo).as_str());
+        let mode = ins.unwrap().mode;
+        let instruction = ins.unwrap().name.as_str();
+        let num_bytes = ins.unwrap().bytes;
+        let mut lo = 0;
+        let mut hi = 0;
+        let mut asm = String::from(instruction);
+        asm.push(' ');
+        match mode {
+            AddressingMode::IMP => {
+                asm.push_str("                            ");
+            }
+            AddressingMode::ACC => {
+                asm.push('A');
+                asm.push_str("                           ");
+            }
+            AddressingMode::IMM => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("#${:02X}", lo).as_str());
+                asm.push_str("                        ");
+            }
+            AddressingMode::ZPG => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("${:02X} ", lo).as_str());
 
-    //             let addr = self.bus.peek(lo as u16);
-    //             asm.push_str(format!("= {:02X}", addr).as_str());
-    //             asm.push_str("                    ");
-    //         }
-    //         AddressingMode::ZPX => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             asm.push_str(format!("${:02X},X ", lo).as_str());
+                let addr = self.bus.peek(lo as u16);
+                asm.push_str(format!("= {:02X}", addr).as_str());
+                asm.push_str("                    ");
+            }
+            AddressingMode::ZPX => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("${:02X},X ", lo).as_str());
 
-    //             self.store.addr = self.x.wrapping_add(lo) as u16;
-    //             asm.push_str(format!("@ {:02X} ", self.store.addr).as_str());
+                self.store.addr = self.x.wrapping_add(lo) as u16;
+                asm.push_str(format!("@ {:02X} ", self.store.addr).as_str());
 
-    //             self.store.data = self.bus.peek(self.store.addr);
-    //             asm.push_str(format!("= {:02X}", self.store.data).as_str());
-    //             asm.push_str("             ");
-    //         }
-    //         AddressingMode::ZPY => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             asm.push_str(format!("${:02X},Y ", lo).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
+                asm.push_str("             ");
+            }
+            AddressingMode::ZPY => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("${:02X},Y ", lo).as_str());
 
-    //             self.store.addr = self.y.wrapping_add(lo) as u16;
-    //             asm.push_str(format!("@ {:02X} ", self.store.addr).as_str());
+                self.store.addr = self.y.wrapping_add(lo) as u16;
+                asm.push_str(format!("@ {:02X} ", self.store.addr).as_str());
 
-    //             self.store.data = self.bus.peek(self.store.addr);
-    //             asm.push_str(format!("= {:02X}", self.store.data).as_str());
-    //             asm.push_str("             ");
-    //         }
-    //         AddressingMode::ABS => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             hi = self.bus.peek(self.pc.wrapping_add(2));
-    //             self.store.addr = u16::from_le_bytes([lo, hi]);
-    //             asm.push_str(format!("${:04X} ", self.store.addr).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
+                asm.push_str("             ");
+            }
+            AddressingMode::ABS => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                self.store.addr = u16::from_le_bytes([lo, hi]);
+                asm.push_str(format!("${:04X} ", self.store.addr).as_str());
 
-    //             if instruction != "JMP" && instruction != "JSR" {
-    //                 self.store.data = self.bus.peek(self.store.addr);
-    //                 asm.push_str(format!("= {:02X}", self.store.data).as_str());
-    //                 asm.push_str("                  ");
-    //             } else {
-    //                 asm.push_str("                      ");
-    //             }
-    //         }
-    //         AddressingMode::ABX => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             hi = self.bus.peek(self.pc.wrapping_add(2));
-    //             self.store.addr = u16::from_le_bytes([lo, hi]);
-    //             asm.push_str(format!("${:04X},X ", self.store.addr).as_str());
+                if instruction != "JMP" && instruction != "JSR" {
+                    self.store.data = self.bus.peek(self.store.addr);
+                    asm.push_str(
+                        format!("= {:02X}", self.store.data).as_str(),
+                    );
+                    asm.push_str("                  ");
+                } else {
+                    asm.push_str("                      ");
+                }
+            }
+            AddressingMode::ABX => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                self.store.addr = u16::from_le_bytes([lo, hi]);
+                asm.push_str(format!("${:04X},X ", self.store.addr).as_str());
 
-    //             self.store.addr = self.store.addr.wrapping_add(self.x as u16);
-    //             asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
+                self.store.addr = self.store.addr.wrapping_add(self.x as u16);
+                asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
 
-    //             self.store.data = self.bus.peek(self.store.addr);
-    //             asm.push_str(format!("= {:02X}", self.store.data).as_str());
-    //             asm.push_str("         ");
-    //         }
-    //         AddressingMode::ABY => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             hi = self.bus.peek(self.pc.wrapping_add(2));
-    //             self.store.addr = u16::from_le_bytes([lo, hi]);
-    //             asm.push_str(format!("${:04X},Y ", self.store.addr).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
+                asm.push_str("         ");
+            }
+            AddressingMode::ABY => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                self.store.addr = u16::from_le_bytes([lo, hi]);
+                asm.push_str(format!("${:04X},Y ", self.store.addr).as_str());
 
-    //             self.store.addr = self.store.addr.wrapping_add(self.y as u16);
-    //             asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
+                self.store.addr = self.store.addr.wrapping_add(self.y as u16);
+                asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
 
-    //             self.store.data = self.bus.peek(self.store.addr);
-    //             asm.push_str(format!("= {:02X}", self.store.data).as_str());
-    //             asm.push_str("         ");
-    //         }
-    //         AddressingMode::IND => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             hi = self.bus.peek(self.pc.wrapping_add(2));
-    //             let indirect = u16::from_le_bytes([lo, hi]);
-    //             asm.push_str(format!("(${:04X}) ", indirect).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
+                asm.push_str("         ");
+            }
+            AddressingMode::IND => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                hi = self.bus.peek(self.pc.wrapping_add(2));
+                let indirect = u16::from_le_bytes([lo, hi]);
+                asm.push_str(format!("(${:04X}) ", indirect).as_str());
 
-    //             self.store.addr = indirect;
-    //             self.store.lo = self.bus.peek(indirect);
-    //             self.store.addr = u16::from_le_bytes([
-    //                 lo_byte(self.store.addr.wrapping_add(1)),
-    //                 hi_byte(self.store.addr),
-    //             ]);
-    //             self.store.hi = self.bus.mem_read(self.store.addr);
-    //             self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-    //             asm.push_str(format!("= {:04X}", self.store.addr).as_str());
-    //             asm.push_str("              ");
-    //         }
-    //         AddressingMode::INX => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             asm.push_str(format!("(${:02X},X) ", lo).as_str());
+                self.store.addr = indirect;
+                self.store.lo = self.bus.peek(indirect);
+                self.store.addr = u16::from_le_bytes([
+                    lo_byte(self.store.addr.wrapping_add(1)),
+                    hi_byte(self.store.addr),
+                ]);
+                self.store.hi = self.bus.mem_read(self.store.addr);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
+                asm.push_str(format!("= {:04X}", self.store.addr).as_str());
+                asm.push_str("              ");
+            }
+            AddressingMode::INX => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("(${:02X},X) ", lo).as_str());
 
-    //             let indexed = self.x.wrapping_add(lo);
-    //             asm.push_str(format!("@ {:02X} ", indexed).as_str());
+                let indexed = self.x.wrapping_add(lo);
+                asm.push_str(format!("@ {:02X} ", indexed).as_str());
 
-    //             self.store.lo = self.bus.peek(indexed as u16);
-    //             self.store.hi = self.bus.peek(indexed.wrapping_add(1) as u16);
-    //             self.store.addr = u16::from_le_bytes([self.store.lo, self.store.hi]);
-    //             asm.push_str(format!("= {:04X} ", self.store.addr).as_str());
+                self.store.lo = self.bus.peek(indexed as u16);
+                self.store.hi = self.bus.peek(indexed.wrapping_add(1) as u16);
+                self.store.addr =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
+                asm.push_str(format!("= {:04X} ", self.store.addr).as_str());
 
-    //             self.store.data = self.bus.peek(self.store.addr);
-    //             asm.push_str(format!("= {:02X}", self.store.data).as_str());
-    //             asm.push_str("    ");
-    //         }
-    //         AddressingMode::INY => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             asm.push_str(format!("(${:02X}),Y ", lo).as_str());
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
+                asm.push_str("    ");
+            }
+            AddressingMode::INY => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                asm.push_str(format!("(${:02X}),Y ", lo).as_str());
 
-    //             self.store.lo = self.bus.peek(lo as u16);
-    //             self.store.hi = self.bus.peek(lo.wrapping_add(1) as u16);
-    //             let indirect = u16::from_le_bytes([self.store.lo, self.store.hi]);
-    //             asm.push_str(format!("= {:04X} ", indirect).as_str());
+                self.store.lo = self.bus.peek(lo as u16);
+                self.store.hi = self.bus.peek(lo.wrapping_add(1) as u16);
+                let indirect =
+                    u16::from_le_bytes([self.store.lo, self.store.hi]);
+                asm.push_str(format!("= {:04X} ", indirect).as_str());
 
-    //             self.store.addr = indirect.wrapping_add(self.y as u16);
-    //             asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
+                self.store.addr = indirect.wrapping_add(self.y as u16);
+                asm.push_str(format!("@ {:04X} ", self.store.addr).as_str());
 
-    //             self.store.data = self.bus.peek(self.store.addr);
-    //             asm.push_str(format!("= {:02X}", self.store.data).as_str());
-    //             asm.push_str("  ");
-    //         }
-    //         AddressingMode::REL => {
-    //             lo = self.bus.peek(self.pc.wrapping_add(1));
-    //             self.store.offset = lo as i8;
-    //             self.store.addr = (self.pc as i32 + 2 + self.store.offset as i32) as u16;
-    //             asm.push_str(format!("${:04X}", self.store.addr as u16).as_str());
-    //             asm.push_str("                       ");
-    //         }
-    //     }
-    //     if num_bytes > 1 {
-    //         buf.push_str(format!("{:02X}", lo).as_str());
-    //         buf.push(' ');
-    //         if num_bytes > 2 {
-    //             buf.push_str(format!("{:02X}", hi).as_str());
-    //             buf.push_str("  ");
-    //         } else {
-    //             buf.push_str("    ");
-    //         }
-    //     } else {
-    //         buf.push_str("       ");
-    //     }
+                self.store.data = self.bus.peek(self.store.addr);
+                asm.push_str(format!("= {:02X}", self.store.data).as_str());
+                asm.push_str("  ");
+            }
+            AddressingMode::REL => {
+                lo = self.bus.peek(self.pc.wrapping_add(1));
+                self.store.offset = lo as i8;
+                self.store.addr =
+                    (self.pc as i32 + 2 + self.store.offset as i32) as u16;
+                asm.push_str(
+                    format!("${:04X}", self.store.addr as u16).as_str(),
+                );
+                asm.push_str("                       ");
+            }
+        }
+        if num_bytes > 1 {
+            buf.push_str(format!("{:02X}", lo).as_str());
+            buf.push(' ');
+            if num_bytes > 2 {
+                buf.push_str(format!("{:02X}", hi).as_str());
+                buf.push_str("  ");
+            } else {
+                buf.push_str("    ");
+            }
+        } else {
+            buf.push_str("       ");
+        }
 
-    //     buf.push_str(asm.as_str());
+        buf.push_str(asm.as_str());
 
-    //     buf.push_str(
-    //         format!(
-    //             "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}",
-    //             self.a,
-    //             self.x,
-    //             self.y,
-    //             self.p.bits(),
-    //             self.sp,
-    //             self.total_ticks
-    //         )
-    //         .as_str(),
-    //     );
-    //     println!("{buf}");
-    // }
+        let mut ppu_cycle = 0;
+        let mut ppu_scanline = 0;
+        for handler in &self.bus.memory_handlers {
+            if handler.contains(0x2000) {
+                ppu_cycle = handler.ppu_debug_cycle().unwrap();
+                ppu_scanline = handler.ppu_debug_scanline().unwrap();
+            }
+        }
+
+        buf.push_str(
+            format!(
+                "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} PPU:{:3},{:3} CYC:{}",
+                self.a,
+                self.x,
+                self.y,
+                self.p.bits(),
+                self.sp,
+                ppu_scanline,
+                ppu_cycle,
+                self.total_ticks
+            )
+            .as_str(),
+        );
+        println!("{buf}");
+    }
 }

@@ -9,10 +9,16 @@ pub trait BusDevice {
     fn mem_read(&mut self, addr: u16) -> u8;
     fn mem_write(&mut self, addr: u16, data: u8);
     fn peek(&self, addr: u16) -> u8;
+    fn ppu_debug_cycle(&self) -> Option<u16> {
+        None
+    }
+    fn ppu_debug_scanline(&self) -> Option<u16> {
+        None
+    }
 }
 
 pub struct Bus {
-    memory_handlers: Vec<Box<dyn BusDevice>>,
+    pub memory_handlers: Vec<Box<dyn BusDevice>>,
     open_bus: u8,
 }
 
