@@ -2,7 +2,22 @@ use super::{NAMETABLE_START, PPU, PPUCTRL, PPUMASK, PPUSTATUS};
 
 impl PPU {
     pub fn draw_pixel(&mut self) {
-        // TODO
+        let x = self.cycle - 1; // this is called during cycles [1,256]
+        let y = self.scanline;
+        // get pixel index based on current cycle and scanline
+        let idx = (y * 256 + x) as usize;
+        // ??? not sure what's going on beyond here
+        let background = if x < 8 { 0 } else { 
+            let mut data = 0;
+            if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND) {
+                data = (self.tiles >> 32) as u32 >> ((7 - self.x) * 4);
+                data &= 0x0F;
+            }
+            data as u8
+         };
+        let color = if background % 4 == 0 { 0 } else { background };
+        let data = self.palette[self.get_palette_addr(color as u16) as usize];
+        self.back[idx] = data % 64;
     }
 
     pub fn fetch_nametable(&mut self) {
@@ -65,18 +80,65 @@ impl PPU {
     }
 
     pub fn copy_y(&mut self) {
-        // TODO: vert(v) = vert(t)
+        // set v: ttt t. ttttt ..... from t: ttt t. ttttt .....
+        self.v &= 0b000_01_00000_11111;
+        self.v |= (self.t & 0b111_10_11111_00000);
     }
 
     pub fn copy_x(&mut self) {
-        // TODO: hori(v) = hori(t)
+        // set v: ... .t ..... ttttt from t: ... .t ..... ttttt
+        self.v &= 0b111_10_11111_00000;
+        self.v |= (self.t & 0b000_01_00000_11111);
     }
 
     pub fn increment_x(&mut self) {
-        // TODO: inc(hori(v))
+        // check if all coarse x bits are set
+        if (self.v & 0b11111) != 0b11111 {
+            // if not, simple increment
+            self.v += 1;
+        } else {
+            // if yes, zero out coarse x
+            self.v &= 0b1_111_11_11111_00000;
+            // switch horizontal nametable (wrapping add logic)
+            self.v ^= 0b1_00000_00000;
+        }
     }
 
     pub fn increment_y(&mut self) {
-        // TODO: inc(vert(v))
+        // check if all fine y bits are set
+        if (self.v & 0b111_00_00000_00000) != 0b111_00_00000_00000 {
+            // if not, simple increment
+            self.v += 0b1_00_00000_00000;
+        } else {
+            // if yes, zero out fine y
+            self.v &= 0b1_000_11_11111_11111;
+            // get coarse y from v[9:5]
+            let mut coarse_y = (self.v & 0b11111_00000) >> 5;
+            // increment coarse x (wrapping add logic)
+            if coarse_y == 0b11101 {
+                coarse_y = 0; // PPU uses 30 tiles, so max(coarse_y) = 0b11101
+                self.v ^= 0b10_00000_00000; // switch vertical nametable
+            } else if coarse_y == 0b11111 {
+                coarse_y = 0; // coarse Y reset to 0, no switching
+            } else {
+                coarse_y += 1; // simple increment
+            }
+            // OR in coarse y to get final address
+            self.v = (self.v & 0b1_111_11_00000_11111) | (coarse_y << 5);
+        }
+    }
+
+    pub fn store_tiles(&mut self) {
+        let mut data = 0;
+        for _i in 0..8 {
+            let a = self.store.attribute_byte;
+            let p1 = (self.store.tile_lo_byte & 0x80) >> 7;
+            let p2 = (self.store.tile_hi_byte & 0x80) >> 6;
+            self.store.tile_lo_byte <<= 1;
+            self.store.tile_hi_byte <<= 1;
+            data <<= 4;
+            data |= (a | p1 | p2) as u32;
+        }
+        self.tiles |= data as u64;
     }
 }

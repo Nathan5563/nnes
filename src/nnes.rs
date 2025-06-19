@@ -46,17 +46,17 @@ impl NNES {
     }
 
     pub fn tick(&mut self) {
-        // PPU runs at master/4
-        if self.master_clock % 4 == 0 {
-            self.ppu.borrow_mut().tick();
-        }
-
         // CPU runs at master/12
         if self.master_clock % 12 == 0 {
             // if self.cpu.borrow_mut().ins.is_none() {
             //     self.cpu.borrow_mut().trace();
             // }
             self.cpu.borrow_mut().tick();
+        }
+
+        // PPU runs at master/4
+        if self.master_clock % 4 == 0 {
+            self.ppu.borrow_mut().tick();
         }
 
         // // APU runs at master/24

@@ -68,6 +68,9 @@ pub struct PPU {
     oam: [u8; 64 * 4], // 64 sprites of size 4 bytes each
     secondary_oam: [u8; 8 * 4],
 
+    // 4 16-bit background shift registers
+    tiles: u64,
+
     // Open bus
     open_bus: u8,
 
@@ -110,6 +113,7 @@ impl PPU {
             palette: [0; 0x20],
             oam: [0; 64 * 4],
             secondary_oam: [0; 8 * 4],
+            tiles: 0,
             open_bus: 0,
             front: [0; 256 * 240],
             back: [0; 256 * 240],
@@ -139,7 +143,7 @@ impl PPU {
 
     pub fn reset(&mut self) {
         self.cycle = 0;
-        self.scanline = 241;
+        self.scanline = 261;
     }
 
     fn mem_read(&self, mut addr: u16) -> u8 {
@@ -229,7 +233,11 @@ impl PPU {
     }
 
     fn get_palette_addr(&self, mut addr: u16) -> u16 {
-        addr = (addr - 0x3F00) & 0x1F;
+        addr = if addr >= PALETTE_START {
+            addr - 0x3F00
+        } else {
+            addr
+        } & 0x1F;
         if addr >= 16 && addr % 4 == 0 {
             addr -= 16;
         }
@@ -239,13 +247,13 @@ impl PPU {
     fn handle_pre_render_line(&mut self) {
         if self
             .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
-            && (280..=304).contains(&self.cycle)
+            .intersects(PPUMASK::SHOW_BACKGROUND /* TODO: add sprites */)
         {
-            self.copy_y();
+            if (280..=304).contains(&self.cycle) {
+                self.copy_y();
+            }
+            self.handle_fetch_cycles();
         }
-
-        self.handle_fetch_cycles();
 
         // TODO: handle pre-render line evaluation
     }
@@ -253,12 +261,11 @@ impl PPU {
     fn handle_render_lines(&mut self) {
         if self
             .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
+            .intersects(PPUMASK::SHOW_BACKGROUND /* TODO: add sprites */)
         {
             if VISIBLE_CYCLES.contains(&self.cycle) {
                 self.draw_pixel();
             }
-
             self.handle_fetch_cycles();
         }
     }
@@ -267,13 +274,16 @@ impl PPU {
         if PRE_FETCH_CYCLES.contains(&self.cycle)
             || VISIBLE_CYCLES.contains(&self.cycle)
         {
-            // TODO: figure out internal tile data storage
+            self.tiles <<= 4;
             match self.cycle % 8 {
                 1 => self.fetch_nametable(),
                 3 => self.fetch_attribute(),
                 5 => self.fetch_tile_lo(),
                 7 => self.fetch_tile_hi(),
-                0 => self.increment_x(),
+                0 => {
+                    self.increment_x();
+                    self.store_tiles();
+                }
                 _ => {}
             }
 
@@ -287,6 +297,7 @@ impl PPU {
 
     fn handle_evaluation_lines(&mut self) {
         match self.cycle {
+            0 => {}
             1..=64 => {
                 // clear secondary OAM
                 // hack memory accesses to simulate read -> write
@@ -317,6 +328,9 @@ impl PPU {
         if self.scanline == 241 && self.cycle == 1 {
             // enter VBlank
             self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
+            // present completed frame
+            std::mem::swap(&mut self.front, &mut self.back);
+            // self.back.fill(0); // MAYBE BUG: reset buffer or not?
         }
 
         if self.scanline == PRE_RENDER_LINE && self.cycle == 1 {
