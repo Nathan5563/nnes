@@ -10,8 +10,8 @@ mod utils;
 use cartridge::{validate_rom, Cartridge};
 use nnes::NNES;
 use sdl2::{
-    event::Event, keyboard::Keycode, pixels::PixelFormatEnum, rect::Rect,
-    render::Canvas, video::Window, Sdl,
+    event::Event, keyboard::Keycode, pixels::PixelFormatEnum, render::Canvas,
+    video::Window, Sdl,
 };
 use std::{env, fs::read, process, thread, time::Duration};
 
@@ -85,7 +85,7 @@ fn main() -> Result<(), String> {
             nnes.tick();
         }
 
-        // 2) Map ppu.output_buffer (u8 indices) -> raw RGB bytes
+        // 2) Map ppu.front (u8 indices) -> raw RGB bytes
         texture.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
             for (i, &palette_idx) in
                 nnes.ppu.borrow_mut().front.iter().enumerate()
@@ -114,8 +114,8 @@ fn main() -> Result<(), String> {
             }
         }
 
-        // 5) Sleep for 16 ms/frame
-        thread::sleep(Duration::from_millis(16));
+        // 5) Sleep for some time to change execution speed
+        thread::sleep(Duration::from_micros(1350));
     }
 
     Ok(())
