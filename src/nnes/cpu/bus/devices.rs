@@ -2,24 +2,40 @@ use super::{BusDevice, Cartridge, PPU};
 use std::{cell::RefCell, rc::Rc};
 
 pub struct RAM {
-    ram: [u8; 0x0800],
+    ram: [u8; 0x0801],
 }
 
 impl BusDevice for RAM {
     fn contains(&self, addr: u16) -> bool {
-        (0x0000..0x2000).contains(&addr)
+        (0x0000..0x2000).contains(&addr) || addr == 0x4014
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        self.ram[addr as usize & 0x07FF]
+        if addr == 0x4014 {
+            panic!("OAM DMA read");
+        } else {
+            self.ram[addr as usize & 0x07FF]
+        }
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
-        self.ram[addr as usize & 0x07FF] = data;
+        if addr == 0x4014 {
+            self.ram[0x0800] = 42;
+        } else {
+            self.ram[addr as usize & 0x07FF] = data;
+        }
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        self.ram[addr as usize & 0x07FF]
+        if addr == 0x4014 {
+            self.ram[0x0800]
+        } else {
+            self.ram[addr as usize & 0x07FF]
+        }
+    }
+
+    fn oam_dma_reset(&mut self) {
+        self.ram[0x0800] = 0;
     }
 }
 
@@ -29,26 +45,17 @@ pub struct PPU_Regs {
 
 impl BusDevice for PPU_Regs {
     fn contains(&self, addr: u16) -> bool {
-        (0x2000..0x4000).contains(&addr) || addr == 0x4014
+        (0x2000..0x4000).contains(&addr)
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        if addr == 0x4014 {
-            // call cpu callback in ppu to handle oam transfer
-            0
-        } else {
-            let reg = (addr % 8) as u8;
-            self.ppu.borrow_mut().reg_read(reg)
-        }
+        let reg = (addr % 8) as u8;
+        self.ppu.borrow_mut().reg_read(reg)
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
-        if addr == 0x4014 {
-            // call cpu callback in ppu to handle oam transfer
-        } else {
-            let reg = (addr % 8) as u8;
-            self.ppu.borrow_mut().reg_write(reg, data);
-        }
+        let reg = (addr % 8) as u8;
+        self.ppu.borrow_mut().reg_write(reg, data);
     }
 
     fn peek(&self, addr: u16) -> u8 {
@@ -172,7 +179,7 @@ pub fn memory_map(
     cartridge: &Cartridge,
     memory_handlers: &mut Vec<Box<dyn BusDevice>>,
 ) {
-    memory_handlers.push(Box::new(RAM { ram: [0; 0x0800] }));
+    memory_handlers.push(Box::new(RAM { ram: [0; 0x0801] }));
     memory_handlers.push(Box::new(PPU_Regs { ppu }));
     memory_handlers.push(Box::new(APU_Regs {
         apu_regs: [0; 0x0020],

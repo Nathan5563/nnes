@@ -156,6 +156,10 @@ impl CPU {
     }
 
     pub fn tick(&mut self) {
+        if self.bus.peek(0x4014) == 42 {
+            println!("OAM DMA");
+            self.bus.oam_dma_reset();
+        }
         //———————————————————————————————————————————————————————————————————
         //  {Fetch OR Interrupt} -> Decode -> Execute -> {Fetch OR Interrupt}
         //———————————————————————————————————————————————————————————————————
