@@ -4,20 +4,35 @@ impl PPU {
     pub fn draw_pixel(&mut self) {
         let x = self.cycle - 1; // this is called during cycles [1,256]
         let y = self.scanline;
-        // get pixel index based on current cycle and scanline
         let idx = (y * 256 + x) as usize;
-        // ??? not sure what's going on beyond here
-        let background = if x < 8 { 0 } else { 
-            let mut data = 0;
-            if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND) {
-                data = (self.tiles >> 32) as u32 >> ((7 - self.x) * 4);
-                data &= 0x0F;
+
+        let mut background = 0;
+        if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND) {
+            if x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_BACKGROUND) {
+                // Select pixel from pattern table shift registers using fine x scroll
+                let bit_mux = 0x8000 >> self.x;
+                let p1 = ((self.pattern_lo & bit_mux) > 0) as u8;
+                let p2 = ((self.pattern_hi & bit_mux) > 0) as u8;
+
+                // Select palette from attribute table shift registers
+                let a1 = ((self.attribute_lo & bit_mux) > 0) as u8;
+                let a2 = ((self.attribute_hi & bit_mux) > 0) as u8;
+
+                let pattern = (p2 << 1) | p1;
+                let attribute = (a2 << 1) | a1;
+
+                // A pattern of 0 means the background color is used
+                if pattern != 0 {
+                    background = (attribute << 2) | pattern;
+                }
             }
-            data as u8
-         };
-        let color = if background % 4 == 0 { 0 } else { background };
-        let data = self.palette[self.get_palette_addr(color as u16) as usize];
-        self.back[idx] = data % 64;
+        }
+
+        // TODO: Sprite rendering and multiplexing
+        let color = background;
+
+        let palette_addr = self.get_palette_addr(color as u16);
+        self.back[idx] = self.palette[palette_addr as usize] % 64;
     }
 
     pub fn fetch_nametable(&mut self) {
@@ -56,7 +71,7 @@ impl PPU {
 
         let shift = idx << 1; // {0,2,4,6}
                               // final attribute: AA ..
-        self.store.attribute_byte = ((attr_byte >> shift) & 0b11) << 2;
+        self.store.attribute_byte = (attr_byte >> shift) & 0b11;
     }
 
     pub fn fetch_tile_lo(&mut self) {
@@ -129,16 +144,9 @@ impl PPU {
     }
 
     pub fn store_tiles(&mut self) {
-        let mut data = 0;
-        for _i in 0..8 {
-            let a = self.store.attribute_byte;
-            let p1 = (self.store.tile_lo_byte & 0x80) >> 7;
-            let p2 = (self.store.tile_hi_byte & 0x80) >> 6;
-            self.store.tile_lo_byte <<= 1;
-            self.store.tile_hi_byte <<= 1;
-            data <<= 4;
-            data |= (a | p1 | p2) as u32;
-        }
-        self.tiles |= data as u64;
+        self.pattern_lo = (self.pattern_lo & 0xFF00) | self.store.tile_lo_byte as u16;
+        self.pattern_hi = (self.pattern_hi & 0xFF00) | self.store.tile_hi_byte as u16;
+        self.attribute_lo = (self.attribute_lo & 0xFF00) | if self.store.attribute_byte & 0b01 != 0 { 0xFF } else { 0x00 };
+        self.attribute_hi = (self.attribute_hi & 0xFF00) | if self.store.attribute_byte & 0b10 != 0 { 0xFF } else { 0x00 };
     }
 }

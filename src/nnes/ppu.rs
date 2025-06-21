@@ -30,8 +30,8 @@ bitflags! {
 
     pub struct PPUMASK: u8 {
         const GRAYSCALE = 0b0000_0001;
-        const CLIP_BACKGROUND = 0b0000_0010;    // 1: no clipping
-        const CLIP_SPRITES = 0b0000_0100;       // 1: no clipping
+        const NO_CLIP_BACKGROUND = 0b0000_0010;
+        const NO_CLIP_SPRITES = 0b0000_0100;
         const SHOW_BACKGROUND = 0b0000_1000;
         const SHOW_SPRITES = 0b0001_0000;
         const EMPH_RED = 0b0010_0000;
@@ -68,8 +68,11 @@ pub struct PPU {
     oam: [u8; 64 * 4], // 64 sprites of size 4 bytes each
     secondary_oam: [u8; 8 * 4],
 
-    // 4 16-bit background shift registers
-    tiles: u64,
+    // Background shift registers
+    pattern_lo: u16,
+    pattern_hi: u16,
+    attribute_lo: u16,
+    attribute_hi: u16,
 
     // Open bus
     open_bus: u8,
@@ -113,7 +116,10 @@ impl PPU {
             palette: [0; 0x20],
             oam: [0; 64 * 4],
             secondary_oam: [0; 8 * 4],
-            tiles: 0,
+            pattern_lo: 0,
+            pattern_hi: 0,
+            attribute_lo: 0,
+            attribute_hi: 0,
             open_bus: 0,
             front: [0; 256 * 240],
             back: [0; 256 * 240],
@@ -233,13 +239,10 @@ impl PPU {
     }
 
     fn get_palette_addr(&self, mut addr: u16) -> u16 {
-        addr = if addr >= PALETTE_START {
-            addr - 0x3F00
-        } else {
-            addr
-        } & 0x1F;
-        if addr >= 16 && addr % 4 == 0 {
-            addr -= 16;
+        addr &= 0x1F;
+        // Mirror $3F10/$3F14/$3F18/$3F1C to $3F00/$3F04/$3F08/$3F0C
+        if addr >= 0x10 && addr % 4 == 0 {
+            addr &= 0x0F;
         }
         addr
     }
@@ -274,7 +277,11 @@ impl PPU {
         if PRE_FETCH_CYCLES.contains(&self.cycle)
             || VISIBLE_CYCLES.contains(&self.cycle)
         {
-            self.tiles <<= 4;
+            self.pattern_lo <<= 1;
+            self.pattern_hi <<= 1;
+            self.attribute_lo <<= 1;
+            self.attribute_hi <<= 1;
+
             match self.cycle % 8 {
                 1 => self.fetch_nametable(),
                 3 => self.fetch_attribute(),
