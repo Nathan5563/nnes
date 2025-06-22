@@ -26,11 +26,6 @@ impl NNES {
         ppu.borrow_mut().on_nmi = Box::new(move || {
             cpu_ref_for_nmi.borrow_mut().nmi_pending = true;
         });
-        // Give PPU OAM DMA callback access to CPU OAM DMA field
-        let cpu_ref_for_oam_dma = cpu.clone();
-        ppu.borrow_mut().on_oam_dma = Box::new(move || {
-            // TODO: set CPU field to indicate OAMDMA
-        });
 
         NNES {
             master_clock: 0,
@@ -51,7 +46,15 @@ impl NNES {
             // if self.cpu.borrow_mut().ins.is_none() {
             //     self.cpu.borrow_mut().trace();
             // }
-            self.cpu.borrow_mut().tick();
+            let mut cpu_ref = self.cpu.borrow_mut();
+            cpu_ref.tick();
+            if cpu_ref.store.oam_dma_data < 256
+            {
+                self.ppu.borrow_mut().oam
+                    [(cpu_ref.store.oam_dma_index.wrapping_sub(1)) as usize] =
+                    cpu_ref.store.oam_dma_data as u8;
+                cpu_ref.store.oam_dma_data = 512;
+            }
         }
 
         // PPU runs at master/4

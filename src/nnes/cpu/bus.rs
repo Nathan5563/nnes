@@ -9,7 +9,14 @@ pub trait BusDevice {
     fn mem_read(&mut self, addr: u16) -> u8;
     fn mem_write(&mut self, addr: u16, data: u8);
     fn peek(&self, addr: u16) -> u8;
-    fn oam_dma_reset(&mut self) {}
+    fn oam_dma_pending(&self) -> bool {
+        false
+    }
+    fn oam_dma_start(&mut self) {}
+    fn oam_dma_running(&self) -> bool {
+        false
+    }
+    fn oam_dma_finish(&mut self) {}
     fn ppu_debug_cycle(&self) -> Option<u16> {
         None
     }
@@ -63,10 +70,36 @@ impl Bus {
         self.open_bus
     }
 
-    pub fn oam_dma_reset(&mut self) {
+    pub fn oam_dma_pending(&self) -> bool {
+        for handler in &self.memory_handlers {
+            if handler.contains(0x4014) {
+                return handler.oam_dma_pending();
+            }
+        }
+        false
+    }
+
+    pub fn oam_dma_start(&mut self) {
         for handler in &mut self.memory_handlers {
             if handler.contains(0x4014) {
-                handler.oam_dma_reset();
+                return handler.oam_dma_start();
+            }
+        }
+    }
+
+    pub fn oam_dma_running(&self) -> bool {
+        for handler in &self.memory_handlers {
+            if handler.contains(0x4014) {
+                return handler.oam_dma_running();
+            }
+        }
+        false
+    }
+
+    pub fn oam_dma_finish(&mut self) {
+        for handler in &mut self.memory_handlers {
+            if handler.contains(0x4014) {
+                handler.oam_dma_finish();
                 return;
             }
         }

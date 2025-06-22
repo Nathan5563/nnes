@@ -65,7 +65,7 @@ pub struct PPU {
     chr_rom: Vec<u8>,
     vram: [u8; 0x800],
     palette: [u8; 0x20],
-    oam: [u8; 64 * 4], // 64 sprites of size 4 bytes each
+    pub oam: [u8; 64 * 4], // 64 sprites of size 4 bytes each
     secondary_oam: [u8; 8 * 4],
 
     // Background shift registers

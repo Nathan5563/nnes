@@ -2,7 +2,8 @@ use super::{BusDevice, Cartridge, PPU};
 use std::{cell::RefCell, rc::Rc};
 
 pub struct RAM {
-    ram: [u8; 0x0801],
+    ram: [u8; 0x0802],
+    oam_dma_running: bool,
 }
 
 impl BusDevice for RAM {
@@ -21,6 +22,7 @@ impl BusDevice for RAM {
     fn mem_write(&mut self, addr: u16, data: u8) {
         if addr == 0x4014 {
             self.ram[0x0800] = 42;
+            self.ram[0x0801] = data;
         } else {
             self.ram[addr as usize & 0x07FF] = data;
         }
@@ -28,14 +30,32 @@ impl BusDevice for RAM {
 
     fn peek(&self, addr: u16) -> u8 {
         if addr == 0x4014 {
-            self.ram[0x0800]
+            self.ram[0x0801]
         } else {
             self.ram[addr as usize & 0x07FF]
         }
     }
 
-    fn oam_dma_reset(&mut self) {
+    fn oam_dma_pending(&self) -> bool {
+        if self.ram[0x0800] == 42 {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn oam_dma_start(&mut self) {
         self.ram[0x0800] = 0;
+        self.ram[0x0801] = 0;
+        self.oam_dma_running = true;
+    }
+
+    fn oam_dma_running(&self) -> bool {
+        self.oam_dma_running
+    }
+
+    fn oam_dma_finish(&mut self) {
+        self.oam_dma_running = false;
     }
 }
 
@@ -179,7 +199,10 @@ pub fn memory_map(
     cartridge: &Cartridge,
     memory_handlers: &mut Vec<Box<dyn BusDevice>>,
 ) {
-    memory_handlers.push(Box::new(RAM { ram: [0; 0x0801] }));
+    memory_handlers.push(Box::new(RAM {
+        ram: [0; 0x0802],
+        oam_dma_running: false,
+    }));
     memory_handlers.push(Box::new(PPU_Regs { ppu }));
     memory_handlers.push(Box::new(APU_Regs {
         apu_regs: [0; 0x0020],

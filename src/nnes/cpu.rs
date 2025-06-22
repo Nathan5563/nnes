@@ -54,32 +54,33 @@ pub struct CPU {
     p: Flags,
 
     // Memory bus
-    bus: Bus,
+    pub bus: Bus,
 
     // FSM metadata
     state: CPUState,
     pub ins: Option<&'static OpCode>,
     curr_ins_ticks: i8,
     required_ins_ticks: u8,
-    store: CPUStore,
+    pub store: CPUStore,
     software_interrupt: bool,
     pub nmi_pending: bool,
     irq_pending: bool,
     servicing_interrupt: bool,
     hijacked: bool,
     page_crossed: bool,
-
-    // Debugging tools
     total_ticks: u64,
 }
 
-struct CPUStore {
+pub struct CPUStore {
     lo: u8,
     hi: u8,
     addr: u16,
     data: u8,
     offset: i8,
     vector: u16,
+    pub oam_dma_page: u16,
+    pub oam_dma_index: u8,
+    pub oam_dma_data: u16,
 }
 
 impl CPU {
@@ -103,6 +104,9 @@ impl CPU {
                 data: 0,
                 offset: 0,
                 vector: 0,
+                oam_dma_page: 0,
+                oam_dma_index: 0,
+                oam_dma_data: 512,
             },
             software_interrupt: false,
             nmi_pending: false,
@@ -156,10 +160,45 @@ impl CPU {
     }
 
     pub fn tick(&mut self) {
-        if self.bus.peek(0x4014) == 42 {
-            println!("OAM DMA");
-            self.bus.oam_dma_reset();
+        if self.bus.oam_dma_pending() {
+            // OAM DMA trigger: DMA transfer from CPU memory page to PPU OAM.
+            self.store.oam_dma_page = (self.bus.peek(0x4014) as u16) << 8;
+            self.store.oam_dma_index = 0;
+            self.store.oam_dma_data = 0;
+            self.bus.oam_dma_start();
+            // The DMA transfer takes 513 CPU cycles.
+            // If the CPU starts/ends on an odd cycle, it ticks to 514.
+            if self.total_ticks % 2 != 0 {
+                self.total_ticks += 1;
+                return;
+            }
+            // By the time this completes, the CPU may have ticked once.
         }
+
+        if self.bus.oam_dma_running() {
+            // In the original hardware, each byte took two ticks for a read and write.
+            // Because the CPU can't write to the PPU here, simulate two-cycle reads.
+            // Writing will be handled instantaneously by the NNES struct.
+            if self.total_ticks % 2 == 0 {
+                self.store.oam_dma_data = self.bus.mem_read(
+                    self.store.oam_dma_page + self.store.oam_dma_index as u16,
+                ) as u16;
+                self.store.oam_dma_index =
+                    self.store.oam_dma_index.wrapping_add(1);
+                if self.store.oam_dma_index == 0 {
+                    // Wrapped around from 255, completed OAM DMA
+                    self.bus.oam_dma_finish();
+                } else {
+                    self.total_ticks += 1;
+                    return;
+                }
+            } else {
+                self.total_ticks += 1;
+                return;
+            }
+            // By the time this completes, the CPU has ticked 512 times.
+        }
+
         //———————————————————————————————————————————————————————————————————
         //  {Fetch OR Interrupt} -> Decode -> Execute -> {Fetch OR Interrupt}
         //———————————————————————————————————————————————————————————————————
