@@ -1,5 +1,10 @@
 Crucial (immediate next steps)
-- Implement PPU
+- Fix PPU
+    - Why zelda messed up?
+    - Why no SMB?
+    - Why top-left pixel buggy?
+    - Why code ugly? refactor
+    - Learn sprites properly
 - Implement APU
 
 Important (do in parallel or in the near future)
