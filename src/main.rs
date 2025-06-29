@@ -13,7 +13,13 @@ use sdl2::{
     event::Event, keyboard::Keycode, pixels::PixelFormatEnum, render::Canvas,
     video::Window, Sdl,
 };
-use std::{env, fs::read, process, thread, time::Duration};
+use std::{
+    env,
+    fs::read,
+    process,
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 macro_rules! die {
     ($msg:expr) => {
@@ -78,8 +84,12 @@ fn main() -> Result<(), String> {
     // NES CPU runs ~1.7898 MHz, frame rate ~60.1 Hz: ~29780 CPU ticks/frame.
     // Tick CPU once per 12 master cycles: 29780 * 12 = ~357360 master cycles per frame.
     let master_cycles_per_frame = 357360;
+    let target_frame_duration = Duration::from_millis(1000 / 60);
+
     let mut event_pump = sdl.event_pump()?;
     'running: loop {
+        let frame_start = Instant::now();
+
         // 1) Tick the emulator
         for _ in 0..master_cycles_per_frame {
             nnes.tick();
@@ -103,7 +113,7 @@ fn main() -> Result<(), String> {
         canvas.copy(&texture, None, None)?;
         canvas.present();
 
-        // 4) Handle input & delay to ~60 Hz
+        // 4) Handle input
         for event in event_pump.poll_iter() {
             if let Event::KeyDown {
                 keycode: Some(Keycode::Escape),
@@ -114,8 +124,11 @@ fn main() -> Result<(), String> {
             }
         }
 
-        // 5) Sleep for some time to change execution speed
-        thread::sleep(Duration::from_micros(1350));
+        // 5) Clamp to 60fps
+        let frame_time = frame_start.elapsed();
+        if frame_time < target_frame_duration {
+            sleep(target_frame_duration - frame_time);
+        }
     }
 
     Ok(())

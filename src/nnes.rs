@@ -48,8 +48,7 @@ impl NNES {
             // }
             let mut cpu_ref = self.cpu.borrow_mut();
             cpu_ref.tick();
-            if cpu_ref.store.oam_dma_data < 256
-            {
+            if cpu_ref.store.oam_dma_data < 256 {
                 self.ppu.borrow_mut().oam
                     [(cpu_ref.store.oam_dma_index.wrapping_sub(1)) as usize] =
                     cpu_ref.store.oam_dma_data as u8;
