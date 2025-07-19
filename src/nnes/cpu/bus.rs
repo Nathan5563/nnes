@@ -1,6 +1,7 @@
 mod devices;
 
 use super::super::{Cartridge, PPU};
+use crate::controller::Joypad;
 use devices::memory_map;
 use std::{cell::RefCell, rc::Rc};
 
@@ -21,6 +22,9 @@ pub trait BusDevice {
         None
     }
     fn ppu_debug_scanline(&self) -> Option<u16> {
+        None
+    }
+    fn get_joypad_ref(&mut self) -> Option<&mut Joypad> {
         None
     }
 }
@@ -68,6 +72,15 @@ impl Bus {
             }
         }
         self.open_bus
+    }
+
+    pub fn get_joypad_ref(&mut self) -> Option<&mut Joypad> {
+        for handler in &mut self.memory_handlers {
+            if handler.contains(0x4016) {
+                return handler.get_joypad_ref();
+            }
+        }
+        None
     }
 
     pub fn oam_dma_pending(&self) -> bool {

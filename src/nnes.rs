@@ -12,6 +12,7 @@ pub struct NNES {
     pub cpu: Rc<RefCell<CPU>>,
     pub ppu: Rc<RefCell<PPU>>,
     // pub apu: Rc<RefCell<APU>>,
+    
 }
 
 impl NNES {
@@ -48,11 +49,11 @@ impl NNES {
             // }
             let mut cpu_ref = self.cpu.borrow_mut();
             cpu_ref.tick();
-            if cpu_ref.store.oam_dma_data < 256 {
+            if cpu_ref.store.oam_dma_data < 0x100 {
                 self.ppu.borrow_mut().oam
                     [(cpu_ref.store.oam_dma_index.wrapping_sub(1)) as usize] =
                     cpu_ref.store.oam_dma_data as u8;
-                cpu_ref.store.oam_dma_data = 512;
+                cpu_ref.store.oam_dma_data = 0x200;
             }
         }
 

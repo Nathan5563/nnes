@@ -6,19 +6,21 @@ impl PPU {
         let y = self.scanline;
         let idx = (y * 256 + x) as usize;
 
-        // Background rendering
-        let mut background = 0u8;
+        let mut background = 0;
         if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND) {
             if x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_BACKGROUND) {
                 // Select pixel from pattern table shift registers using fine x scroll
                 let bit_mux = 0x8000 >> self.x;
                 let p1 = ((self.pattern_lo & bit_mux) > 0) as u8;
                 let p2 = ((self.pattern_hi & bit_mux) > 0) as u8;
+
                 // Select palette from attribute table shift registers
                 let a1 = ((self.attribute_lo & bit_mux) > 0) as u8;
                 let a2 = ((self.attribute_hi & bit_mux) > 0) as u8;
+
                 let pattern = (p2 << 1) | p1;
                 let attribute = (a2 << 1) | a1;
+
                 // A pattern of 0 means the background color is used
                 if pattern != 0 {
                     background = (attribute << 2) | pattern;
@@ -26,78 +28,11 @@ impl PPU {
             }
         }
 
-        // Sprite rendering
-        let (sprite_index, mut sprite_color) = self.get_sprite_pixel(x);
+        // TODO: Sprite rendering and multiplexing
+        let color = background;
 
-        // Left edge clipping for sprites
-        if x < 8 && !self.ppu_mask.contains(PPUMASK::NO_CLIP_SPRITES) {
-            sprite_color = 0;
-        }
-
-        // Pixel multiplexing logic - optimized
-        let background_opaque = background & 3 != 0;
-        let sprite_opaque = sprite_color & 3 != 0;
-
-        let final_color = if !background_opaque && !sprite_opaque {
-            // Both transparent - use universal background color
-            0
-        } else if !background_opaque && sprite_opaque {
-            // Background transparent, sprite opaque - use sprite
-            sprite_color | 0x10 // Sprite palette base
-        } else if background_opaque && !sprite_opaque {
-            // Background opaque, sprite transparent - use background
-            background
-        } else {
-            // Both opaque - priority and sprite 0 hit logic
-
-            // Sprite 0 hit detection (sprite_index represents the original sprite slot)
-            if sprite_index == 0 && x < 255 && x != 0 {
-                self.ppu_status.insert(PPUSTATUS::SPRITE0_HIT);
-            }
-
-            // Check sprite priority (bit 5 of sprite attributes)
-            let sprite_priority =
-                (self.sprite_attributes[sprite_index as usize] >> 5) & 1;
-            if sprite_priority == 0 {
-                // Sprite has priority - use sprite
-                sprite_color | 0x10
-            } else {
-                // Background has priority - use background
-                background
-            }
-        };
-
-        // Get final palette color
-        let palette_addr = self.get_palette_addr(final_color as u16);
+        let palette_addr = self.get_palette_addr(color as u16);
         self.back[idx] = self.palette[palette_addr as usize] % 64;
-    }
-
-    fn get_sprite_pixel(&self, x: u16) -> (u8, u8) {
-        if !self.ppu_mask.contains(PPUMASK::SHOW_SPRITES) {
-            return (0, 0);
-        }
-        for i in 0..8 {
-            let sprite_y = self.sprite_y_coords[i];
-            if sprite_y == 0xFF {
-                continue;
-            }
-            let sprite_x = self.sprite_x_coords[i] as u16;
-            let offset = x.wrapping_sub(sprite_x);
-            if offset > 7 {
-                continue;
-            }
-            let pattern = self.sprite_patterns[i];
-            // No flip logic here! Always extract left-to-right
-            let color = ((pattern >> (offset * 4)) & 0x0F) as u8;
-            if color == 0 {
-                continue;
-            }
-            let attributes = self.sprite_attributes[i];
-            let palette = attributes & 0x03;
-            let final_color = (palette << 2) | color;
-            return (i as u8, final_color);
-        }
-        (0, 0)
     }
 
     pub fn fetch_nametable(&mut self) {
@@ -209,21 +144,9 @@ impl PPU {
     }
 
     pub fn store_tiles(&mut self) {
-        self.pattern_lo =
-            (self.pattern_lo & 0xFF00) | self.store.tile_lo_byte as u16;
-        self.pattern_hi =
-            (self.pattern_hi & 0xFF00) | self.store.tile_hi_byte as u16;
-        self.attribute_lo = (self.attribute_lo & 0xFF00)
-            | if self.store.attribute_byte & 0b01 != 0 {
-                0xFF
-            } else {
-                0x00
-            };
-        self.attribute_hi = (self.attribute_hi & 0xFF00)
-            | if self.store.attribute_byte & 0b10 != 0 {
-                0xFF
-            } else {
-                0x00
-            };
+        self.pattern_lo = (self.pattern_lo & 0xFF00) | self.store.tile_lo_byte as u16;
+        self.pattern_hi = (self.pattern_hi & 0xFF00) | self.store.tile_hi_byte as u16;
+        self.attribute_lo = (self.attribute_lo & 0xFF00) | if self.store.attribute_byte & 0b01 != 0 { 0xFF } else { 0x00 };
+        self.attribute_hi = (self.attribute_hi & 0xFF00) | if self.store.attribute_byte & 0b10 != 0 { 0xFF } else { 0x00 };
     }
 }

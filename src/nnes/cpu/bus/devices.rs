@@ -1,4 +1,5 @@
 use super::{BusDevice, Cartridge, PPU};
+use crate::{controller::Joypad, utils::bit_7};
 use std::{cell::RefCell, rc::Rc};
 
 pub struct RAM {
@@ -99,7 +100,7 @@ pub struct APU_Regs {
 
 impl BusDevice for APU_Regs {
     fn contains(&self, addr: u16) -> bool {
-        (0x4000..0x4020).contains(&addr)
+        (0x4000..=0x4015).contains(&addr) || (0x4018..=0x4019).contains(&addr)
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
@@ -110,6 +111,30 @@ impl BusDevice for APU_Regs {
 
     fn peek(&self, addr: u16) -> u8 {
         0
+    }
+}
+
+impl BusDevice for Joypad {
+    fn contains(&self, addr: u16) -> bool {
+        (0x4016..=0x4017).contains(&addr)
+    }
+
+    fn mem_read(&mut self, addr: u16) -> u8 {
+        let data = bit_7(self.state);
+        self.state <<= 1;
+        data
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.state = self.active;
+    }
+
+    fn peek(&self, addr: u16) -> u8 {
+        self.state
+    }
+
+    fn get_joypad_ref(&mut self) -> Option<&mut Joypad> {
+        Some(self)
     }
 }
 
@@ -206,6 +231,10 @@ pub fn memory_map(
     memory_handlers.push(Box::new(PPU_Regs { ppu }));
     memory_handlers.push(Box::new(APU_Regs {
         apu_regs: [0; 0x0020],
+    }));
+    memory_handlers.push(Box::new(Joypad {
+        active: 0,
+        state: 0,
     }));
     if cartridge.has_trainer || cartridge.has_sram {
         memory_handlers.push(Box::new(SRAM {

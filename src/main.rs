@@ -4,13 +4,16 @@ extern crate lazy_static;
 extern crate bitflags;
 
 mod cartridge;
+mod controller;
 mod nnes;
 mod utils;
+mod palette;
 
+pub use palette::NES_PALETTE;
 use cartridge::{validate_rom, Cartridge};
 use nnes::NNES;
 use sdl2::{
-    event::Event, keyboard::Keycode, pixels::PixelFormatEnum, render::Canvas,
+    keyboard::Keycode, pixels::PixelFormatEnum, render::Canvas,
     video::Window, Sdl,
 };
 use std::{
@@ -28,8 +31,6 @@ macro_rules! die {
     };
 }
 
-mod palette;
-pub use palette::NES_PALETTE;
 
 fn init_sdl() -> Result<(Sdl, Canvas<Window>), String> {
     let sdl = sdl2::init()?;
@@ -115,9 +116,9 @@ fn main() -> Result<(), String> {
 
         // 4) Handle input
         for event in event_pump.poll_iter() {
-            if let Event::KeyDown {
-                keycode: Some(Keycode::Escape),
-                ..
+            nnes.cpu.borrow_mut().bus.get_joypad_ref().unwrap().update_state(&event);
+            if let sdl2::event::Event::KeyDown {
+                keycode: Some(Keycode::Escape), ..
             } = event
             {
                 break 'running;
