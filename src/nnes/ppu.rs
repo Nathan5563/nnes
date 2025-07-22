@@ -47,12 +47,44 @@ bitflags! {
     }
 }
 
+#[derive(PartialEq)]
+pub enum SpriteEvalState {
+    YCoordinate,
+    TileNumber,
+    Attributes,
+    XCoordinate,
+    Done,
+}
+
 pub struct PPUStore {
+    // Background state
     nametable_byte: u8,
     attribute_byte: u8,
     tile_lo_byte: u8,
     tile_hi_byte: u8,
     tile_addr: u16,
+
+    // Sprite state
+    sprite_eval_state: SpriteEvalState,
+    sprite_height: u8,
+    curr_sprite: u8,
+    accepted_sprite: u8,
+    read_sprite: u8,
+    curr_sprite_byte: u8,
+    read_sprite_byte: u8,
+    found_empty: bool,
+    y_coordinate: u8,
+    tile_number: u8,
+    attributes: u8,
+    x_coordinate: u8,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Sprite {
+    y_coordinate: u8,
+    tile_number: u8,
+    attributes: u8,
+    x_coordinate: u8,
 }
 
 pub struct PPU {
@@ -65,7 +97,12 @@ pub struct PPU {
     chr_rom: Vec<u8>,
     vram: [u8; 0x800],
     palette: [u8; 0x20],
-    pub oam: [u8; 64 * 4], // 64 sprites of size 4 bytes each
+    // Sprites are 4 bytes each:
+    //   y_coordinate
+    //   tile_number
+    //   attributes
+    //   x_coordinate
+    pub oam: [u8; 64 * 4],
     secondary_oam: [u8; 8 * 4],
 
     // Background shift registers
@@ -73,6 +110,9 @@ pub struct PPU {
     pattern_hi: u16,
     attribute_lo: u16,
     attribute_hi: u16,
+
+    // Fetched sprites
+    sprites: [Sprite; 8],
 
     // Open bus
     open_bus: u8,
@@ -119,6 +159,13 @@ impl PPU {
             pattern_hi: 0,
             attribute_lo: 0,
             attribute_hi: 0,
+            sprites: [
+                Sprite { 
+                    y_coordinate: 0, 
+                    tile_number: 0, 
+                    attributes: 0, 
+                    x_coordinate: 0 
+                }; 8],
             open_bus: 0,
             front: [0; 256 * 240],
             back: [0; 256 * 240],
@@ -137,6 +184,18 @@ impl PPU {
                 tile_lo_byte: 0,
                 tile_hi_byte: 0,
                 tile_addr: 0,
+                sprite_eval_state: SpriteEvalState::YCoordinate,
+                sprite_height: 0,
+                curr_sprite: 0,
+                accepted_sprite: 0,
+                read_sprite: 0,
+                curr_sprite_byte: 0,
+                read_sprite_byte: 0,
+                found_empty: false,
+                y_coordinate: 0,
+                tile_number: 0,
+                attributes: 0,
+                x_coordinate: 0,
             },
             nmi_prev: false,
             total_cycles: 0,
@@ -248,21 +307,19 @@ impl PPU {
     fn handle_pre_render_line(&mut self) {
         if self
             .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND /* TODO: add sprites */)
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
         {
             if (280..=304).contains(&self.cycle) {
                 self.copy_y();
             }
             self.handle_fetch_cycles();
         }
-
-        // TODO: handle pre-render line evaluation
     }
 
     fn handle_render_lines(&mut self) {
         if self
             .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND /* TODO: add sprites */)
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
         {
             if VISIBLE_CYCLES.contains(&self.cycle) {
                 self.draw_pixel();
@@ -301,6 +358,8 @@ impl PPU {
     }
 
     fn handle_evaluation_lines(&mut self) {
+        self.store.sprite_height = 
+            if self.ppu_ctrl.contains(PPUCTRL::SPRITE_SIZE) { 16 } else { 8 };
         match self.cycle {
             0 => {}
             1..=64 => {
@@ -316,13 +375,177 @@ impl PPU {
                 }
             }
             65..=256 => {
-                // TODO: perform sprite evaluation
+                // note: oam[n][m] = oam[4*n + m]
+                // 1. starting at n = 0,
+                //    read oam[n][0] (y coordinate) and copy to secondary oam if not full
+                //    if the y coordinate is in range, copy remaining 3 bytes of oam[n]
+                // 2. increment n (merged with step 1 in the code below)
+                //    if n == 0, go to step 4
+                //    if less than 8 sprites have been found, go to step 1
+                //    if 8 sprites have been found, disable writes to secondary oam
+                // 3. starting at m = 0, (mergec with step 1 in the code below)
+                //    evaluate oam[n][m] as y coordinate
+                //    if the y coordinate is in range, set sprite overflow and read next 3 oam
+                //      entries incrementing m, and incrementing n when m overflows from 3 -> 0
+                //    if the y coordinate is not in range, increment n and m without carry.
+                //      if n == 0, go to step 4, else go to step 3
+                // 4. attempt (and fail) to copy oam[n][0] into secondary OAM, and increment n.
+                //      repeat until hblank (cycle 257?) is reached
+                let oam_idx = 4 * self.store.curr_sprite + self.store.curr_sprite_byte;
+                let secondary_oam_idx = 4 * self.store.accepted_sprite + self.store.curr_sprite_byte;
+                if self.cycle % 2 == 1 {
+                    // read from primary OAM
+                    match self.store.sprite_eval_state {
+                        SpriteEvalState::YCoordinate => {
+                            self.store.y_coordinate = self.oam[oam_idx as usize];
+                        }
+                        SpriteEvalState::TileNumber => {
+                            self.store.tile_number = self.oam[oam_idx as usize];
+                        }
+                        SpriteEvalState::Attributes => {
+                            self.store.attributes = self.oam[oam_idx as usize];
+                        }
+                        SpriteEvalState::XCoordinate => {
+                            self.store.x_coordinate = self.oam[oam_idx as usize];
+                        }
+                        SpriteEvalState::Done => {
+                            let _ = self.oam[oam_idx as usize];
+                        }
+                    }
+                } else {
+                    // if secondary oam is not full, write to it. if it is full, read from it.
+                    if self.store.accepted_sprite < 8 {
+                        self.secondary_oam[secondary_oam_idx as usize] = match self.store.sprite_eval_state {
+                            SpriteEvalState::YCoordinate => {
+                                self.store.y_coordinate
+                            }
+                            SpriteEvalState::TileNumber => {
+                                self.store.tile_number
+                            }
+                            SpriteEvalState::Attributes => {
+                                self.store.attributes
+                            }
+                            SpriteEvalState::XCoordinate => {
+                                self.store.x_coordinate
+                            }
+                            SpriteEvalState::Done => unreachable!()
+                        };
+                    } else {
+                        let _ = self.secondary_oam[0];
+                    }
+
+                    if self.store.sprite_eval_state != SpriteEvalState::Done {
+                        // if y coordinate is in range
+                        if (self.scanline >= self.store.y_coordinate as u16)
+                            && (self.scanline < (self.store.y_coordinate + self.store.sprite_height) as u16)
+                        {
+                            self.store.curr_sprite_byte = match self.store.curr_sprite_byte {
+                                0 => {
+                                    self.store.sprite_eval_state = SpriteEvalState::TileNumber;
+                                    1
+                                }
+                                1 => {
+                                    self.store.sprite_eval_state = SpriteEvalState::Attributes;
+                                    2
+                                }
+                                2 => {
+                                    self.store.sprite_eval_state = SpriteEvalState::XCoordinate;
+                                    3
+                                }
+                                3 => {
+                                    self.store.sprite_eval_state = SpriteEvalState::YCoordinate;
+                                    0
+                                }
+                                _ => unreachable!()
+                            };
+
+                            // if m 3 -> 0, n += 1
+                            if self.store.curr_sprite_byte == 0 {
+                                self.store.curr_sprite = self.store.curr_sprite.wrapping_add(1);
+                                // if done reading from oam
+                                if self.store.curr_sprite == 0 {
+                                    self.store.sprite_eval_state = SpriteEvalState::Done;
+                                }
+                            }
+
+                            // if overflow, flag. else, if m 3 -> 0, num sprites += 1
+                            if self.store.accepted_sprite >= 8 {
+                                self.ppu_status.insert(PPUSTATUS::SPRITE_OVERFLOW);
+                            } else {
+                                if self.store.curr_sprite_byte == 0 {
+                                    self.store.accepted_sprite = self.store.accepted_sprite.wrapping_add(1);
+                                }
+                            }
+                        } else {
+                            // check next sprite
+                            self.store.curr_sprite = self.store.curr_sprite.wrapping_add(1);
+                            // if done reading from oam
+                            if self.store.curr_sprite == 0 {
+                                self.store.sprite_eval_state = SpriteEvalState::Done;
+                            }
+                            if self.store.accepted_sprite >= 8 {
+                                // m += 1 bug if overflow and y in range
+                                self.store.curr_sprite_byte = match self.store.curr_sprite_byte {
+                                    0 => 1,
+                                    1 => 2,
+                                    2 => 3,
+                                    3 => 0,
+                                    _ => unreachable!()
+                                };
+                            }
+                        }
+                    }
+                }
             }
             257..=320 => {
-                // TODO: perform sprite fetches
+                // cycles 1-4: read the y coordinate, tile number, attributes, and x coordinate
+                //   from secondary OAM
+                // cycles 5-8: dummy reads of the x coordinate from secondary OAM 4 times
+                // for the first empty sprite slot, sprite 63's y coordinate followed by 3 0xFF bytes
+                // for subsequent empty sprite slots, this will be four 0xFF bytes
+                // 8 sprites, 8 cycles each
+                let idx = 4 * self.store.read_sprite + self.store.read_sprite_byte;
+                let is_empty = self.store.read_sprite >= self.store.accepted_sprite;
+                if self.store.read_sprite != 8 {
+                    match self.cycle % 8 {
+                        1 => {
+                            if is_empty {
+                                if self.store.found_empty {
+                                    self.sprites[self.store.read_sprite as usize].y_coordinate = 0xFF;
+                                } else {
+                                    self.store.found_empty = true;
+                                    self.sprites[self.store.read_sprite as usize].y_coordinate = self.oam[4 * 63]; // sprite 63 y
+                                }
+                            } else {
+                                self.sprites[self.store.read_sprite as usize].y_coordinate = self.secondary_oam[idx as usize];
+                            }
+                            self.store.read_sprite_byte = 1;
+                        }
+                        2 => {
+                            self.sprites[self.store.read_sprite as usize].tile_number = self.secondary_oam[idx as usize];
+                            self.store.read_sprite_byte = 2;
+                        }
+                        3 => {
+                            self.sprites[self.store.read_sprite as usize].attributes = self.secondary_oam[idx as usize];
+                            self.store.read_sprite_byte = 3;
+                        }
+                        4 => {
+                            self.sprites[self.store.read_sprite as usize].x_coordinate = self.secondary_oam[idx as usize];
+                            self.store.read_sprite = self.store.read_sprite.wrapping_add(1);
+                            self.store.read_sprite_byte = 0;
+                        }
+                        5..=7 | 0 => {
+                            let _ = self.secondary_oam[idx as usize - 1];
+                        }
+                        _ => unreachable!()
+                    }
+                }
             }
-            321..=340 => {
+            320..=340 => {
                 // TODO: initialize background render pipeline
+                // read the first byte in secondary OAM
+                // in parallel, the ppu fetches the first two background tiles for the next scanline
+                let _ = self.secondary_oam[0];
             }
             _ => unreachable!(),
         }

@@ -144,9 +144,21 @@ impl PPU {
     }
 
     pub fn store_tiles(&mut self) {
-        self.pattern_lo = (self.pattern_lo & 0xFF00) | self.store.tile_lo_byte as u16;
-        self.pattern_hi = (self.pattern_hi & 0xFF00) | self.store.tile_hi_byte as u16;
-        self.attribute_lo = (self.attribute_lo & 0xFF00) | if self.store.attribute_byte & 0b01 != 0 { 0xFF } else { 0x00 };
-        self.attribute_hi = (self.attribute_hi & 0xFF00) | if self.store.attribute_byte & 0b10 != 0 { 0xFF } else { 0x00 };
+        self.pattern_lo =
+            (self.pattern_lo & 0xFF00) | self.store.tile_lo_byte as u16;
+        self.pattern_hi =
+            (self.pattern_hi & 0xFF00) | self.store.tile_hi_byte as u16;
+        self.attribute_lo = (self.attribute_lo & 0xFF00)
+            | if self.store.attribute_byte & 0b01 != 0 {
+                0xFF
+            } else {
+                0x00
+            };
+        self.attribute_hi = (self.attribute_hi & 0xFF00)
+            | if self.store.attribute_byte & 0b10 != 0 {
+                0xFF
+            } else {
+                0x00
+            };
     }
 }
