@@ -12,7 +12,6 @@ pub struct NNES {
     pub cpu: Rc<RefCell<CPU>>,
     pub ppu: Rc<RefCell<PPU>>,
     // pub apu: Rc<RefCell<APU>>,
-    
 }
 
 impl NNES {

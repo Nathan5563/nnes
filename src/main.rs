@@ -6,15 +6,15 @@ extern crate bitflags;
 mod cartridge;
 mod controller;
 mod nnes;
-mod utils;
 mod palette;
+mod utils;
 
-pub use palette::NES_PALETTE;
 use cartridge::{validate_rom, Cartridge};
 use nnes::NNES;
+pub use palette::NES_PALETTE;
 use sdl2::{
-    keyboard::Keycode, pixels::PixelFormatEnum, render::Canvas,
-    video::Window, Sdl,
+    keyboard::Keycode, pixels::PixelFormatEnum, render::Canvas, video::Window,
+    Sdl,
 };
 use std::{
     env,
@@ -30,7 +30,6 @@ macro_rules! die {
         process::exit(1)
     };
 }
-
 
 fn init_sdl() -> Result<(Sdl, Canvas<Window>), String> {
     let sdl = sdl2::init()?;
@@ -91,6 +90,14 @@ fn main() -> Result<(), String> {
     'running: loop {
         let frame_start = Instant::now();
 
+        // 0) Update controller state from user input
+        nnes.cpu
+            .borrow_mut()
+            .bus
+            .get_joypad_ref()
+            .unwrap()
+            .update_state(&event_pump);
+
         // 1) Tick the emulator
         for _ in 0..master_cycles_per_frame {
             nnes.tick();
@@ -116,9 +123,9 @@ fn main() -> Result<(), String> {
 
         // 4) Handle input
         for event in event_pump.poll_iter() {
-            nnes.cpu.borrow_mut().bus.get_joypad_ref().unwrap().update_state(&event);
             if let sdl2::event::Event::KeyDown {
-                keycode: Some(Keycode::Escape), ..
+                keycode: Some(Keycode::Escape),
+                ..
             } = event
             {
                 break 'running;
