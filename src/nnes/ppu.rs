@@ -11,8 +11,6 @@ const PALETTE_START: u16 = 0x3F00;
 const PALETTE_END: u16 = 0x3FFF;
 
 const PRE_RENDER_LINE: u16 = 261;
-const VISIBLE_LINES: std::ops::RangeInclusive<u16> = 0..=239;
-
 const PRE_FETCH_CYCLES: std::ops::RangeInclusive<u16> = 321..=336;
 const VISIBLE_CYCLES: std::ops::RangeInclusive<u16> = 1..=256;
 
@@ -73,18 +71,20 @@ pub struct PPUStore {
     curr_sprite_byte: u8,
     read_sprite_byte: u8,
     found_empty: bool,
+    sprite_0_in_secondary: bool,
     y_coordinate: u8,
     tile_number: u8,
     attributes: u8,
     x_coordinate: u8,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct Sprite {
-    y_coordinate: u8,
-    tile_number: u8,
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SpriteRender {
+    pattern_lo: u8,
+    pattern_hi: u8,
     attributes: u8,
-    x_coordinate: u8,
+    x_counter: u8,
+    is_sprite_0: bool,
 }
 
 pub struct PPU {
@@ -111,8 +111,10 @@ pub struct PPU {
     attribute_lo: u16,
     attribute_hi: u16,
 
-    // Fetched sprites
-    sprites: [Sprite; 8],
+    // Sprite rendering state (8 sprites per scanline)
+    sprite_render: [SpriteRender; 8],
+    sprite_count: u8,
+    sprite_0_on_line: bool,
 
     // Open bus
     open_bus: u8,
@@ -159,13 +161,9 @@ impl PPU {
             pattern_hi: 0,
             attribute_lo: 0,
             attribute_hi: 0,
-            sprites: [
-                Sprite { 
-                    y_coordinate: 0, 
-                    tile_number: 0, 
-                    attributes: 0, 
-                    x_coordinate: 0 
-                }; 8],
+            sprite_render: [SpriteRender::default(); 8],
+            sprite_count: 0,
+            sprite_0_on_line: false,
             open_bus: 0,
             front: [0; 256 * 240],
             back: [0; 256 * 240],
@@ -192,6 +190,7 @@ impl PPU {
                 curr_sprite_byte: 0,
                 read_sprite_byte: 0,
                 found_empty: false,
+                sprite_0_in_secondary: false,
                 y_coordinate: 0,
                 tile_number: 0,
                 attributes: 0,
@@ -249,35 +248,40 @@ impl PPU {
         };
     }
 
+    #[allow(dead_code)]
     fn peek(&self, addr: u16) -> u8 {
         self.mem_read(addr)
     }
 
     pub fn tick(&mut self) {
-        //———————————————————————————————————————————————————————————————————
-        //  Pre-render -> {Render AND Evaluate} -> VBlank -> NMI
-        //———————————————————————————————————————————————————————————————————
-        if self.scanline == PRE_RENDER_LINE {
-            self.handle_pre_render_line();
+        // ==================================================================
+        // PPU Frame Structure (262 scanlines × 341 cycles):
+        //   Scanline 261 (pre-render): Clear flags, prefetch first tiles
+        //   Scanlines 0-239 (visible): Render + evaluate sprites for next line
+        //   Scanline 240 (post-render): Idle
+        //   Scanlines 241-260 (vblank): VBlank flag set, NMI triggered
+        // ==================================================================
+
+        let rendering_enabled = self
+            .ppu_mask
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES);
+
+        match self.scanline {
+            PRE_RENDER_LINE => self.tick_pre_render(rendering_enabled),
+            0..=239 => self.tick_visible(rendering_enabled),
+            240 => {} // Post-render: idle
+            241..=260 => {} // VBlank: handled separately
+            _ => {}
         }
 
-        if VISIBLE_LINES.contains(&self.scanline) {
-            // current scanline rendering
-            self.handle_render_lines();
-            // next scanline evaluation
-            self.handle_evaluation_lines();
-        }
+        // VBlank flag management (separate from scanline handling)
+        self.handle_vblank_flags();
 
-        // vblank entrance/exit and NMI detection
-        self.handle_vblank_lines();
+        // NMI edge detection and triggering
+        self.poll_nmi();
 
-        // NMI polling
-        self.handle_nmi_polling();
-
-        //———————————————————————————————————————————————————————————————————
-        //  Timing calculations
-        //———————————————————————————————————————————————————————————————————
-        self.update_timing();
+        // Advance timing counters
+        self.advance_timing(rendering_enabled);
     }
 
     // Helpers
@@ -304,39 +308,83 @@ impl PPU {
         addr
     }
 
-    fn handle_pre_render_line(&mut self) {
-        if self
-            .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
-        {
+    fn tick_pre_render(&mut self, rendering_enabled: bool) {
+        // Cycle 0: Reset sprite state for new frame
+        if self.cycle == 0 {
+            self.reset_sprite_state();
+        }
+
+        // Cycles 1-64: Clear secondary OAM to $FF (happens always)
+        if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
+            self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
+        }
+
+        // Cycles 65-256: Sprite evaluation for scanline 0
+        if (65..=256).contains(&self.cycle) {
+            self.tick_sprite_evaluation();
+        }
+
+        if rendering_enabled {
+            // Cycles 280-304: Repeatedly copy vertical scroll from t to v
             if (280..=304).contains(&self.cycle) {
                 self.copy_y();
             }
-            self.handle_fetch_cycles();
+
+            // Background tile fetching (cycles 1-256 and 321-336)
+            self.tick_background_fetch();
+
+            // Sprite tile fetching (cycles 257-320)
+            // All sprites are "empty" since secondary OAM is cleared
+            if (257..=320).contains(&self.cycle) {
+                self.tick_sprite_fetch();
+            }
         }
     }
 
-    fn handle_render_lines(&mut self) {
-        if self
-            .ppu_mask
-            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
-        {
+    fn tick_visible(&mut self, rendering_enabled: bool) {
+        // Cycle 0: Reset sprite evaluation state for this scanline
+        if self.cycle == 0 {
+            self.reset_sprite_state();
+        }
+
+        // Cycles 1-64: Clear secondary OAM (even if rendering disabled)
+        if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
+            self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
+        }
+
+        // Cycles 65-256: Sprite evaluation (for next scanline)
+        if (65..=256).contains(&self.cycle) {
+            self.tick_sprite_evaluation();
+        }
+
+        // Cycles 257-320: Sprite tile fetching (for next scanline)
+        if (257..=320).contains(&self.cycle) {
+            self.tick_sprite_fetch();
+        }
+
+        if rendering_enabled {
+            // Cycles 1-256: Render pixels
             if VISIBLE_CYCLES.contains(&self.cycle) {
                 self.draw_pixel();
             }
-            self.handle_fetch_cycles();
+
+            // Background tile fetching
+            self.tick_background_fetch();
         }
     }
 
-    fn handle_fetch_cycles(&mut self) {
+    fn tick_background_fetch(&mut self) {
+        // Shift registers advance on cycles 1-256 and 321-336
         if PRE_FETCH_CYCLES.contains(&self.cycle)
             || VISIBLE_CYCLES.contains(&self.cycle)
         {
+            // Shift all registers left by 1
             self.pattern_lo <<= 1;
             self.pattern_hi <<= 1;
             self.attribute_lo <<= 1;
             self.attribute_hi <<= 1;
 
+            // Fetch new tile data every 8 cycles
             match self.cycle % 8 {
                 1 => self.fetch_nametable(),
                 3 => self.fetch_attribute(),
@@ -349,249 +397,325 @@ impl PPU {
                 _ => {}
             }
 
+            // Increment Y at end of visible portion
             if self.cycle == 256 {
                 self.increment_y();
             }
         } else if self.cycle == 257 {
+            // Copy horizontal scroll from t to v
             self.copy_x();
         }
     }
 
-    fn handle_evaluation_lines(&mut self) {
-        self.store.sprite_height = 
-            if self.ppu_ctrl.contains(PPUCTRL::SPRITE_SIZE) { 16 } else { 8 };
-        match self.cycle {
-            0 => {}
-            1..=64 => {
-                // clear secondary OAM
-                // hack memory accesses to simulate one cycle read, one cycle write
-                let idx = if (self.cycle - 1) % 2 == 0 {
-                    Some((self.cycle - 1) / 2)
-                } else {
-                    None
+    fn reset_sprite_state(&mut self) {
+        self.store.curr_sprite = 0;
+        self.store.accepted_sprite = 0;
+        self.store.curr_sprite_byte = 0;
+        self.store.read_sprite = 0;
+        self.store.read_sprite_byte = 0;
+        self.store.found_empty = false;
+        self.store.sprite_0_in_secondary = false;
+        self.store.sprite_eval_state = SpriteEvalState::YCoordinate;
+        self.store.sprite_height =
+            if self.ppu_ctrl.contains(PPUCTRL::SPRITE_SIZE) {
+                16
+            } else {
+                8
+            };
+    }
+
+    fn tick_sprite_evaluation(&mut self) {
+        // Sprite evaluation algorithm (cycles 65-256):
+        // Odd cycles: Read from primary OAM[n][m]
+        // Even cycles: Write to secondary OAM (if not full) and advance state
+        //
+        // For each sprite n (0-63):
+        //   1. Read Y coordinate, check if sprite is on next scanline
+        //   2. If in range, copy all 4 bytes to secondary OAM
+        //   3. If 8 sprites found, set overflow flag on additional in-range sprites
+        //   4. The overflow detection has a hardware bug where m also increments
+
+        let oam_idx = (4 * self.store.curr_sprite
+            + self.store.curr_sprite_byte) as usize;
+        let secondary_idx = (4 * self.store.accepted_sprite
+            + self.store.curr_sprite_byte)
+            as usize;
+
+        if self.cycle % 2 == 1 {
+            // Odd cycle: Read from primary OAM
+            let data = self.oam[oam_idx];
+            match self.store.sprite_eval_state {
+                SpriteEvalState::YCoordinate => self.store.y_coordinate = data,
+                SpriteEvalState::TileNumber => self.store.tile_number = data,
+                SpriteEvalState::Attributes => self.store.attributes = data,
+                SpriteEvalState::XCoordinate => self.store.x_coordinate = data,
+                SpriteEvalState::Done => {}
+            }
+        } else {
+            // Even cycle: Write to secondary OAM and advance
+            if self.store.sprite_eval_state == SpriteEvalState::Done {
+                return;
+            }
+
+            // Write to secondary OAM if not full
+            if self.store.accepted_sprite < 8 {
+                self.secondary_oam[secondary_idx] = match self
+                    .store
+                    .sprite_eval_state
+                {
+                    SpriteEvalState::YCoordinate => self.store.y_coordinate,
+                    SpriteEvalState::TileNumber => self.store.tile_number,
+                    SpriteEvalState::Attributes => self.store.attributes,
+                    SpriteEvalState::XCoordinate => self.store.x_coordinate,
+                    SpriteEvalState::Done => unreachable!(),
                 };
-                if let Some(idx) = idx {
-                    self.secondary_oam[idx as usize] = 0xFF;
+            }
+
+            // Check if sprite is in range (for next scanline)
+            // During pre-render (261), next scanline is 0
+            let next_scanline = if self.scanline == PRE_RENDER_LINE {
+                0
+            } else {
+                self.scanline + 1
+            };
+            let y = self.store.y_coordinate as u16;
+            let in_range = next_scanline >= y
+                && next_scanline < y + self.store.sprite_height as u16;
+
+            if in_range {
+                // Sprite is visible on next scanline - copy remaining bytes
+                let (next_byte, next_state) = match self.store.curr_sprite_byte
+                {
+                    0 => (1, SpriteEvalState::TileNumber),
+                    1 => (2, SpriteEvalState::Attributes),
+                    2 => (3, SpriteEvalState::XCoordinate),
+                    3 => (0, SpriteEvalState::YCoordinate),
+                    _ => unreachable!(),
+                };
+                self.store.curr_sprite_byte = next_byte;
+                self.store.sprite_eval_state = next_state;
+
+                // Finished copying this sprite (byte 3 -> 0)
+                if self.store.curr_sprite_byte == 0 {
+                    self.store.curr_sprite =
+                        self.store.curr_sprite.wrapping_add(1);
+                    if self.store.curr_sprite == 0 {
+                        self.store.sprite_eval_state = SpriteEvalState::Done;
+                    }
+
+                    if self.store.accepted_sprite >= 8 {
+                        // Overflow: more than 8 sprites on this line
+                        self.ppu_status.insert(PPUSTATUS::SPRITE_OVERFLOW);
+                    } else {
+                        // Track sprite 0 presence (curr_sprite just incremented to 1)
+                        if self.store.curr_sprite == 1
+                            && self.store.accepted_sprite == 0
+                        {
+                            self.store.sprite_0_in_secondary = true;
+                        }
+                        self.store.accepted_sprite += 1;
+                    }
+                }
+            } else {
+                // Sprite not in range - move to next sprite
+                self.store.curr_sprite =
+                    self.store.curr_sprite.wrapping_add(1);
+                if self.store.curr_sprite == 0 {
+                    self.store.sprite_eval_state = SpriteEvalState::Done;
+                }
+
+                // Hardware bug: when checking for overflow, m also increments
+                if self.store.accepted_sprite >= 8 {
+                    self.store.curr_sprite_byte =
+                        (self.store.curr_sprite_byte + 1) & 3;
                 }
             }
-            65..=256 => {
-                // note: oam[n][m] = oam[4*n + m]
-                // 1. starting at n = 0,
-                //    read oam[n][0] (y coordinate) and copy to secondary oam if not full
-                //    if the y coordinate is in range, copy remaining 3 bytes of oam[n]
-                // 2. increment n (merged with step 1 in the code below)
-                //    if n == 0, go to step 4
-                //    if less than 8 sprites have been found, go to step 1
-                //    if 8 sprites have been found, disable writes to secondary oam
-                // 3. starting at m = 0, (mergec with step 1 in the code below)
-                //    evaluate oam[n][m] as y coordinate
-                //    if the y coordinate is in range, set sprite overflow and read next 3 oam
-                //      entries incrementing m, and incrementing n when m overflows from 3 -> 0
-                //    if the y coordinate is not in range, increment n and m without carry.
-                //      if n == 0, go to step 4, else go to step 3
-                // 4. attempt (and fail) to copy oam[n][0] into secondary OAM, and increment n.
-                //      repeat until hblank (cycle 257?) is reached
-                let oam_idx = 4 * self.store.curr_sprite + self.store.curr_sprite_byte;
-                let secondary_oam_idx = 4 * self.store.accepted_sprite + self.store.curr_sprite_byte;
-                if self.cycle % 2 == 1 {
-                    // read from primary OAM
-                    match self.store.sprite_eval_state {
-                        SpriteEvalState::YCoordinate => {
-                            self.store.y_coordinate = self.oam[oam_idx as usize];
-                        }
-                        SpriteEvalState::TileNumber => {
-                            self.store.tile_number = self.oam[oam_idx as usize];
-                        }
-                        SpriteEvalState::Attributes => {
-                            self.store.attributes = self.oam[oam_idx as usize];
-                        }
-                        SpriteEvalState::XCoordinate => {
-                            self.store.x_coordinate = self.oam[oam_idx as usize];
-                        }
-                        SpriteEvalState::Done => {
-                            let _ = self.oam[oam_idx as usize];
-                        }
+        }
+    }
+
+    fn tick_sprite_fetch(&mut self) {
+        // Cycles 257-320: Fetch sprite tile data for next scanline
+        // 8 sprites × 8 cycles each:
+        //   Cycles 0-3: Read Y, tile, attributes, X from secondary OAM
+        //   Cycles 4-5: Fetch pattern table data (low and high bytes)
+        //   Cycles 6-7: Unused
+
+        let sprite_idx = ((self.cycle - 257) / 8) as u8;
+        let cycle_in_sprite = (self.cycle - 257) % 8;
+        let secondary_idx = (sprite_idx as usize) * 4;
+        let is_empty = sprite_idx >= self.store.accepted_sprite;
+
+        match cycle_in_sprite {
+            0 => {
+                // Read Y coordinate (or special values for empty slots)
+                self.store.y_coordinate = if is_empty {
+                    if !self.store.found_empty {
+                        self.store.found_empty = true;
+                        self.oam[4 * 63] // First empty uses sprite 63's Y
+                    } else {
+                        0xFF // Subsequent empty slots use $FF
                     }
                 } else {
-                    // if secondary oam is not full, write to it. if it is full, read from it.
-                    if self.store.accepted_sprite < 8 {
-                        self.secondary_oam[secondary_oam_idx as usize] = match self.store.sprite_eval_state {
-                            SpriteEvalState::YCoordinate => {
-                                self.store.y_coordinate
-                            }
-                            SpriteEvalState::TileNumber => {
-                                self.store.tile_number
-                            }
-                            SpriteEvalState::Attributes => {
-                                self.store.attributes
-                            }
-                            SpriteEvalState::XCoordinate => {
-                                self.store.x_coordinate
-                            }
-                            SpriteEvalState::Done => unreachable!()
-                        };
-                    } else {
-                        let _ = self.secondary_oam[0];
-                    }
-
-                    if self.store.sprite_eval_state != SpriteEvalState::Done {
-                        // if y coordinate is in range
-                        if (self.scanline >= self.store.y_coordinate as u16)
-                            && (self.scanline < (self.store.y_coordinate + self.store.sprite_height) as u16)
-                        {
-                            self.store.curr_sprite_byte = match self.store.curr_sprite_byte {
-                                0 => {
-                                    self.store.sprite_eval_state = SpriteEvalState::TileNumber;
-                                    1
-                                }
-                                1 => {
-                                    self.store.sprite_eval_state = SpriteEvalState::Attributes;
-                                    2
-                                }
-                                2 => {
-                                    self.store.sprite_eval_state = SpriteEvalState::XCoordinate;
-                                    3
-                                }
-                                3 => {
-                                    self.store.sprite_eval_state = SpriteEvalState::YCoordinate;
-                                    0
-                                }
-                                _ => unreachable!()
-                            };
-
-                            // if m 3 -> 0, n += 1
-                            if self.store.curr_sprite_byte == 0 {
-                                self.store.curr_sprite = self.store.curr_sprite.wrapping_add(1);
-                                // if done reading from oam
-                                if self.store.curr_sprite == 0 {
-                                    self.store.sprite_eval_state = SpriteEvalState::Done;
-                                }
-                            }
-
-                            // if overflow, flag. else, if m 3 -> 0, num sprites += 1
-                            if self.store.accepted_sprite >= 8 {
-                                self.ppu_status.insert(PPUSTATUS::SPRITE_OVERFLOW);
-                            } else {
-                                if self.store.curr_sprite_byte == 0 {
-                                    self.store.accepted_sprite = self.store.accepted_sprite.wrapping_add(1);
-                                }
-                            }
-                        } else {
-                            // check next sprite
-                            self.store.curr_sprite = self.store.curr_sprite.wrapping_add(1);
-                            // if done reading from oam
-                            if self.store.curr_sprite == 0 {
-                                self.store.sprite_eval_state = SpriteEvalState::Done;
-                            }
-                            if self.store.accepted_sprite >= 8 {
-                                // m += 1 bug if overflow and y in range
-                                self.store.curr_sprite_byte = match self.store.curr_sprite_byte {
-                                    0 => 1,
-                                    1 => 2,
-                                    2 => 3,
-                                    3 => 0,
-                                    _ => unreachable!()
-                                };
-                            }
-                        }
-                    }
-                }
+                    self.secondary_oam[secondary_idx]
+                };
             }
-            257..=320 => {
-                // cycles 1-4: read the y coordinate, tile number, attributes, and x coordinate
-                //   from secondary OAM
-                // cycles 5-8: dummy reads of the x coordinate from secondary OAM 4 times
-                // for the first empty sprite slot, sprite 63's y coordinate followed by 3 0xFF bytes
-                // for subsequent empty sprite slots, this will be four 0xFF bytes
-                // 8 sprites, 8 cycles each
-                let idx = 4 * self.store.read_sprite + self.store.read_sprite_byte;
-                let is_empty = self.store.read_sprite >= self.store.accepted_sprite;
-                if self.store.read_sprite != 8 {
-                    match self.cycle % 8 {
-                        1 => {
-                            if is_empty {
-                                if self.store.found_empty {
-                                    self.sprites[self.store.read_sprite as usize].y_coordinate = 0xFF;
-                                } else {
-                                    self.store.found_empty = true;
-                                    self.sprites[self.store.read_sprite as usize].y_coordinate = self.oam[4 * 63]; // sprite 63 y
-                                }
-                            } else {
-                                self.sprites[self.store.read_sprite as usize].y_coordinate = self.secondary_oam[idx as usize];
-                            }
-                            self.store.read_sprite_byte = 1;
-                        }
-                        2 => {
-                            self.sprites[self.store.read_sprite as usize].tile_number = self.secondary_oam[idx as usize];
-                            self.store.read_sprite_byte = 2;
-                        }
-                        3 => {
-                            self.sprites[self.store.read_sprite as usize].attributes = self.secondary_oam[idx as usize];
-                            self.store.read_sprite_byte = 3;
-                        }
-                        4 => {
-                            self.sprites[self.store.read_sprite as usize].x_coordinate = self.secondary_oam[idx as usize];
-                            self.store.read_sprite = self.store.read_sprite.wrapping_add(1);
-                            self.store.read_sprite_byte = 0;
-                        }
-                        5..=7 | 0 => {
-                            let _ = self.secondary_oam[idx as usize - 1];
-                        }
-                        _ => unreachable!()
-                    }
-                }
+            1 => {
+                self.store.tile_number = if is_empty {
+                    0xFF
+                } else {
+                    self.secondary_oam[secondary_idx + 1]
+                };
             }
-            320..=340 => {
-                // TODO: initialize background render pipeline
-                // read the first byte in secondary OAM
-                // in parallel, the ppu fetches the first two background tiles for the next scanline
-                let _ = self.secondary_oam[0];
+            2 => {
+                self.store.attributes = if is_empty {
+                    0xFF
+                } else {
+                    self.secondary_oam[secondary_idx + 2]
+                };
             }
+            3 => {
+                self.store.x_coordinate = if is_empty {
+                    0xFF
+                } else {
+                    self.secondary_oam[secondary_idx + 3]
+                };
+            }
+            5 => {
+                // Fetch and store sprite tile patterns
+                self.fetch_sprite_pattern(sprite_idx, is_empty);
+            }
+            4 | 6 | 7 => {} // Unused cycles
             _ => unreachable!(),
         }
     }
 
-    fn handle_vblank_lines(&mut self) {
-        if self.scanline == 241 && self.cycle == 1 {
-            // enter VBlank
-            self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
-            // present completed frame
-            std::mem::swap(&mut self.front, &mut self.back);
-            // self.back.fill(0); // MAYBE BUG: reset buffer or not?
+    fn fetch_sprite_pattern(&mut self, sprite_idx: u8, is_empty: bool) {
+        let y = self.store.y_coordinate;
+        let tile = self.store.tile_number;
+        let attr = self.store.attributes;
+        let x = self.store.x_coordinate;
+        let flip_v = (attr & 0x80) != 0;
+        let flip_h = (attr & 0x40) != 0;
+
+        // Calculate row within sprite (for next scanline)
+        // During pre-render (261), next scanline is 0
+        let next_scanline = if self.scanline == PRE_RENDER_LINE {
+            0
+        } else {
+            self.scanline + 1
+        };
+        let row = if is_empty {
+            0
+        } else {
+            let raw_row = next_scanline.wrapping_sub(y as u16) as u8;
+            if self.store.sprite_height == 16 {
+                if flip_v {
+                    15 - raw_row
+                } else {
+                    raw_row
+                }
+            } else {
+                if flip_v {
+                    7 - raw_row
+                } else {
+                    raw_row
+                }
+            }
+        };
+
+        // Calculate pattern table address
+        let pattern_addr = if self.store.sprite_height == 16 {
+            // 8x16 sprites: tile bit 0 selects bank, bits 1-7 are top tile index
+            let bank = (tile & 1) as u16 * 0x1000;
+            let top_tile = (tile & 0xFE) as u16;
+            let (tile_idx, row_in_tile) = if row >= 8 {
+                (top_tile + 1, row - 8)
+            } else {
+                (top_tile, row)
+            };
+            bank + tile_idx * 16 + row_in_tile as u16
+        } else {
+            // 8x8 sprites: PPUCTRL bit 3 selects pattern table
+            let bank = if self.ppu_ctrl.contains(PPUCTRL::SPRITE_PATTERN_TABLE)
+            {
+                0x1000
+            } else {
+                0x0000
+            };
+            bank + (tile as u16) * 16 + row as u16
+        };
+
+        // Fetch and optionally flip pattern data
+        let (mut lo, mut hi) = if is_empty {
+            (0, 0)
+        } else {
+            (self.mem_read(pattern_addr), self.mem_read(pattern_addr + 8))
+        };
+        if flip_h {
+            lo = lo.reverse_bits();
+            hi = hi.reverse_bits();
         }
 
-        if self.scanline == PRE_RENDER_LINE && self.cycle == 1 {
-            // exit VBlank
-            self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
-            self.nmi_prev = false;
-            self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
-            self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
+        // Store in sprite render buffer
+        let render = &mut self.sprite_render[sprite_idx as usize];
+        render.pattern_lo = lo;
+        render.pattern_hi = hi;
+        render.attributes = attr;
+        render.x_counter = x;
+        render.is_sprite_0 =
+            sprite_idx == 0 && self.store.sprite_0_in_secondary;
+
+        // Finalize sprite state after last sprite
+        if sprite_idx == 7 {
+            self.sprite_count = self.store.accepted_sprite;
+            self.sprite_0_on_line = self.store.sprite_0_in_secondary;
         }
     }
 
-    fn handle_nmi_polling(&mut self) {
+    fn handle_vblank_flags(&mut self) {
+        // Scanline 241, cycle 1: Enter VBlank
+        if self.scanline == 241 && self.cycle == 1 {
+            self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
+            // Swap front/back buffers to present completed frame
+            std::mem::swap(&mut self.front, &mut self.back);
+        }
+
+        // Pre-render line, cycle 1: Exit VBlank and clear flags
+        if self.scanline == PRE_RENDER_LINE && self.cycle == 1 {
+            self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
+            self.ppu_status.remove(PPUSTATUS::SPRITE0_HIT);
+            self.ppu_status.remove(PPUSTATUS::SPRITE_OVERFLOW);
+            self.nmi_prev = false;
+        }
+    }
+
+    fn poll_nmi(&mut self) {
+        // NMI is edge-triggered: fires when (NMI_ON_VBLANK && IS_VBLANK) transitions low->high
         let nmi_now = self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK)
             && self.ppu_status.contains(PPUSTATUS::IS_VBLANK);
         if nmi_now && !self.nmi_prev {
-            (self.on_nmi.as_mut())();
+            (self.on_nmi)();
         }
         self.nmi_prev = nmi_now;
     }
 
-    fn update_timing(&mut self) {
+    fn advance_timing(&mut self, rendering_enabled: bool) {
         self.cycle += 1;
         self.total_cycles += 1;
 
-        // skip the last cycle of the pre-render line on odd frames
-        if (self.f == 1 && self.scanline == 261 && self.cycle == 340)
-            || self.cycle == 341
-        {
+        // Odd frame skip: on odd frames with rendering enabled, skip cycle 340 of pre-render
+        let odd_skip = self.f == 1
+            && self.scanline == PRE_RENDER_LINE
+            && self.cycle == 340
+            && rendering_enabled;
+
+        if odd_skip || self.cycle == 341 {
             self.cycle = 0;
             self.scanline += 1;
             self.total_scanlines += 1;
         }
 
-        // finalize frame
+        // Frame complete: wrap scanline back to 0
         if self.scanline == 262 {
             self.scanline = 0;
             self.f ^= 1;

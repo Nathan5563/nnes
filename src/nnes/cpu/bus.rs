@@ -18,9 +18,11 @@ pub trait BusDevice {
         false
     }
     fn oam_dma_finish(&mut self) {}
+    #[allow(dead_code)]
     fn ppu_debug_cycle(&self) -> Option<u16> {
         None
     }
+    #[allow(dead_code)]
     fn ppu_debug_scanline(&self) -> Option<u16> {
         None
     }

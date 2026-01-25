@@ -20,8 +20,6 @@ print("// TO CHANGE THE PALETTE (e.g., \"test.pal\"),")
 print("// 1. COPY test.pal INTO /palettes/")
 print("// 2. EDIT /scripts/load-palette.py TO SET `palette = \"test\"`")
 print()
-print("// TODO: MAKE PALETTE SWAPPING EASIER.")
-print()
 print("pub const NES_PALETTE: [(u8, u8, u8); 64] = [")
 for (r, g, b) in palette:
     print(f"    ({r}, {g}, {b}),")

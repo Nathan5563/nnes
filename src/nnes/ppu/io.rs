@@ -1,7 +1,5 @@
 use super::{PPU, PPUCTRL, PPUMASK, PPUSTATUS};
-use crate::utils::{
-    bit_0, bit_1, bit_2, bit_3, bit_4, bit_7, byte_from_bits, hi_byte, lo_byte,
-};
+use crate::utils::{bit_0, bit_1, bit_2, bit_3, bit_4, byte_from_bits};
 
 impl PPU {
     // 0x2000: PPUCTRL - W

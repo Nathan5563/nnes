@@ -1,5 +1,5 @@
 use crate::utils::{bit_0, bit_1, bit_3, byte_from_nibbles, hi_nibble};
-use std::{fs, iter};
+use std::iter;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mirroring {

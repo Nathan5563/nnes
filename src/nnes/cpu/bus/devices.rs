@@ -60,11 +60,11 @@ impl BusDevice for RAM {
     }
 }
 
-pub struct PPU_Regs {
+pub struct PpuRegs {
     ppu: Rc<RefCell<PPU>>,
 }
 
-impl BusDevice for PPU_Regs {
+impl BusDevice for PpuRegs {
     fn contains(&self, addr: u16) -> bool {
         (0x2000..0x4000).contains(&addr)
     }
@@ -93,12 +93,12 @@ impl BusDevice for PPU_Regs {
     }
 }
 
-pub struct APU_Regs {
+pub struct ApuRegs {
     // apu: Rc<RefCell<APU>>,
     apu_regs: [u8; 0x0020],
 }
 
-impl BusDevice for APU_Regs {
+impl BusDevice for ApuRegs {
     fn contains(&self, addr: u16) -> bool {
         (0x4000..=0x4015).contains(&addr) || (0x4018..=0x4019).contains(&addr)
     }
@@ -138,11 +138,11 @@ impl BusDevice for Joypad {
     }
 }
 
-pub struct Expansion_ROM {
-    expansion_rom: [u8; 0x1FE0],
+pub struct ExpansionRom {
+    _expansion_rom: [u8; 0x1FE0],
 }
 
-impl BusDevice for Expansion_ROM {
+impl BusDevice for ExpansionRom {
     fn contains(&self, addr: u16) -> bool {
         (0x4020..0x6000).contains(&addr)
     }
@@ -160,11 +160,11 @@ impl BusDevice for Expansion_ROM {
     }
 }
 
-pub struct SRAM {
+pub struct Sram {
     sram: Vec<u8>,
 }
 
-impl BusDevice for SRAM {
+impl BusDevice for Sram {
     fn contains(&self, addr: u16) -> bool {
         (0x6000..0x8000).contains(&addr)
     }
@@ -182,12 +182,12 @@ impl BusDevice for SRAM {
     }
 }
 
-pub struct PRG_ROM {
+pub struct PrgRom {
     num_banks: u8,
     prg_rom: Vec<u8>,
 }
 
-impl BusDevice for PRG_ROM {
+impl BusDevice for PrgRom {
     fn contains(&self, addr: u16) -> bool {
         (0x8000..=0xFFFF).contains(&addr)
     }
@@ -228,8 +228,8 @@ pub fn memory_map(
         ram: [0; 0x0802],
         oam_dma_running: false,
     }));
-    memory_handlers.push(Box::new(PPU_Regs { ppu }));
-    memory_handlers.push(Box::new(APU_Regs {
+    memory_handlers.push(Box::new(PpuRegs { ppu }));
+    memory_handlers.push(Box::new(ApuRegs {
         apu_regs: [0; 0x0020],
     }));
     memory_handlers.push(Box::new(Joypad {
@@ -237,11 +237,11 @@ pub fn memory_map(
         state: 0,
     }));
     if cartridge.has_trainer || cartridge.has_sram {
-        memory_handlers.push(Box::new(SRAM {
+        memory_handlers.push(Box::new(Sram {
             sram: cartridge.sram.clone(),
         }));
     }
     let prg_rom = cartridge.prg_rom.clone();
     let num_banks = (prg_rom.len() / 0x4000) as u8;
-    memory_handlers.push(Box::new(PRG_ROM { prg_rom, num_banks }));
+    memory_handlers.push(Box::new(PrgRom { prg_rom, num_banks }));
 }

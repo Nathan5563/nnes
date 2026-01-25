@@ -6,7 +6,9 @@ impl PPU {
         let y = self.scanline;
         let idx = (y * 256 + x) as usize;
 
-        let mut background = 0;
+        // --- Background pixel ---
+        let mut bg_pattern = 0u8;
+        let mut bg_palette = 0u8;
         if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND) {
             if x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_BACKGROUND) {
                 // Select pixel from pattern table shift registers using fine x scroll
@@ -18,21 +20,86 @@ impl PPU {
                 let a1 = ((self.attribute_lo & bit_mux) > 0) as u8;
                 let a2 = ((self.attribute_hi & bit_mux) > 0) as u8;
 
-                let pattern = (p2 << 1) | p1;
-                let attribute = (a2 << 1) | a1;
+                bg_pattern = (p2 << 1) | p1;
+                bg_palette = (a2 << 1) | a1;
+            }
+        }
 
-                // A pattern of 0 means the background color is used
-                if pattern != 0 {
-                    background = (attribute << 2) | pattern;
+        // --- Sprite pixel ---
+        let mut sprite_pattern = 0u8;
+        let mut sprite_palette = 0u8;
+        let mut sprite_priority = false; // false = in front of BG, true = behind BG
+        let mut sprite_0_visible = false;
+
+        if self.ppu_mask.contains(PPUMASK::SHOW_SPRITES) {
+            if x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_SPRITES) {
+                // Check each sprite (priority is by index - lower index = higher priority)
+                for i in 0..8 {
+                    let sprite = &self.sprite_render[i];
+                    if sprite.x_counter == 0 {
+                        // This sprite is active at this X position
+                        // Get the leftmost pixel (bit 7)
+                        let p1 = (sprite.pattern_lo >> 7) & 1;
+                        let p2 = (sprite.pattern_hi >> 7) & 1;
+                        let pattern = (p2 << 1) | p1;
+
+                        if pattern != 0 && sprite_pattern == 0 {
+                            // First non-transparent sprite pixel wins
+                            sprite_pattern = pattern;
+                            sprite_palette = sprite.attributes & 0x03;
+                            sprite_priority = (sprite.attributes & 0x20) != 0;
+                            if sprite.is_sprite_0 && i == 0 {
+                                sprite_0_visible = true;
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // TODO: Sprite rendering and multiplexing
-        let color = background;
+        // --- Sprite 0 hit detection ---
+        // Sprite 0 hit occurs when both sprite 0 and background are opaque
+        // and we're not at x=255 (due to timing quirk)
+        if sprite_0_visible && bg_pattern != 0 && x < 255 {
+            if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND)
+                && self.ppu_mask.contains(PPUMASK::SHOW_SPRITES)
+            {
+                self.ppu_status.insert(PPUSTATUS::SPRITE0_HIT);
+            }
+        }
+
+        // --- Multiplexing: determine final pixel color ---
+        let color = if sprite_pattern != 0 {
+            if bg_pattern == 0 || !sprite_priority {
+                // Sprite wins: either BG is transparent, or sprite is in front
+                0x10 | (sprite_palette << 2) | sprite_pattern
+            } else {
+                // BG wins: sprite is behind and BG is opaque
+                (bg_palette << 2) | bg_pattern
+            }
+        } else if bg_pattern != 0 {
+            (bg_palette << 2) | bg_pattern
+        } else {
+            0 // Universal background color
+        };
 
         let palette_addr = self.get_palette_addr(color as u16);
         self.back[idx] = self.palette[palette_addr as usize] % 64;
+
+        // --- Update sprite shift registers ---
+        self.update_sprite_shifters();
+    }
+
+    fn update_sprite_shifters(&mut self) {
+        for sprite in &mut self.sprite_render {
+            if sprite.x_counter > 0 {
+                sprite.x_counter -= 1;
+            } else {
+                // Sprite is active, shift pattern registers
+                sprite.pattern_lo <<= 1;
+                sprite.pattern_hi <<= 1;
+            }
+        }
     }
 
     pub fn fetch_nametable(&mut self) {
@@ -95,15 +162,15 @@ impl PPU {
     }
 
     pub fn copy_y(&mut self) {
-        // set v: ttt t. ttttt ..... from t: ttt t. ttttt .....
+        // Copy vertical scroll bits from t to v: fine Y, nametable Y bit, coarse Y
         self.v &= 0b000_01_00000_11111;
-        self.v |= (self.t & 0b111_10_11111_00000);
+        self.v |= self.t & 0b111_10_11111_00000;
     }
 
     pub fn copy_x(&mut self) {
-        // set v: ... .t ..... ttttt from t: ... .t ..... ttttt
+        // Copy horizontal scroll bits from t to v: nametable X bit, coarse X
         self.v &= 0b111_10_11111_00000;
-        self.v |= (self.t & 0b000_01_00000_11111);
+        self.v |= self.t & 0b000_01_00000_11111;
     }
 
     pub fn increment_x(&mut self) {

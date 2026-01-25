@@ -7,8 +7,6 @@
 // 1. COPY test.pal INTO /palettes/
 // 2. EDIT /scripts/load-palette.py TO SET `palette = "test"`
 
-// TODO: MAKE PALETTE SWAPPING EASIER.
-
 pub const NES_PALETTE: [(u8, u8, u8); 64] = [
     (97, 97, 97),
     (0, 0, 136),
