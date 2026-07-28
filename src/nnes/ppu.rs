@@ -64,7 +64,6 @@ pub struct PPUStore {
 
     // Sprite state
     sprite_eval_state: SpriteEvalState,
-    sprite_height: u8,
     curr_sprite: u8,
     accepted_sprite: u8,
     read_sprite: u8,
@@ -76,6 +75,9 @@ pub struct PPUStore {
     tile_number: u8,
     attributes: u8,
     x_coordinate: u8,
+    // Sprite fetch state carried between fetch dots 5 (low) and 7 (high)
+    sprite_pattern_addr: u16,
+    sprite_pattern_lo: u8,
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -189,7 +191,6 @@ impl PPU {
                 tile_hi_byte: 0,
                 tile_addr: 0,
                 sprite_eval_state: SpriteEvalState::YCoordinate,
-                sprite_height: 0,
                 curr_sprite: 0,
                 accepted_sprite: 0,
                 read_sprite: 0,
@@ -201,6 +202,8 @@ impl PPU {
                 tile_number: 0,
                 attributes: 0,
                 x_coordinate: 0,
+                sprite_pattern_addr: 0,
+                sprite_pattern_lo: 0,
             },
             nmi_prev: false,
             total_cycles: 0,
@@ -426,12 +429,16 @@ impl PPU {
         self.store.found_empty = false;
         self.store.sprite_0_in_secondary = false;
         self.store.sprite_eval_state = SpriteEvalState::YCoordinate;
-        self.store.sprite_height =
-            if self.ppu_ctrl.contains(PPUCTRL::SPRITE_SIZE) {
-                16
-            } else {
-                8
-            };
+    }
+
+    fn sprite_height(&self) -> u8 {
+        // PPUCTRL bit 5 is sampled live wherever the height is used, not
+        // latched once per scanline
+        if self.ppu_ctrl.contains(PPUCTRL::SPRITE_SIZE) {
+            16
+        } else {
+            8
+        }
     }
 
     fn tick_sprite_evaluation(&mut self) {
@@ -496,7 +503,7 @@ impl PPU {
             // scanline, and the fetched sprite is rendered on the next one
             let y = self.store.y_coordinate as u16;
             let in_range = self.scanline >= y
-                && self.scanline < y + self.store.sprite_height as u16;
+                && self.scanline < y + self.sprite_height() as u16;
 
             if in_range {
                 // Overflow: with 8 sprites already accepted, the flag is set
@@ -558,9 +565,10 @@ impl PPU {
     fn tick_sprite_fetch(&mut self) {
         // Cycles 257-320: Fetch sprite tile data for next scanline
         // 8 sprites × 8 cycles each:
-        //   Cycles 0-3: Read Y, tile, attributes, X from secondary OAM
-        //   Cycles 4-5: Fetch pattern table data (low and high bytes)
-        //   Cycles 6-7: Unused
+        //   Cycles 0-1: Garbage nametable fetch; Y read from secondary OAM
+        //   Cycles 2-3: Garbage nametable fetch; tile, attributes, X read
+        //   Cycles 4-5: Fetch pattern table low byte
+        //   Cycles 6-7: Fetch pattern table high byte, finalize sprite
 
         let sprite_idx = ((self.cycle - 257) / 8) as u8;
         let cycle_in_sprite = (self.cycle - 257) % 8;
@@ -569,6 +577,9 @@ impl PPU {
 
         match cycle_in_sprite {
             0 => {
+                // Garbage nametable fetch (bus activity only)
+                let _ = self.mem_read(NAMETABLE_START | (self.v & 0x0FFF));
+
                 // Read Y coordinate (or special values for empty slots)
                 self.store.y_coordinate = if is_empty {
                     if !self.store.found_empty {
@@ -589,6 +600,9 @@ impl PPU {
                 };
             }
             2 => {
+                // Garbage nametable fetch (bus activity only)
+                let _ = self.mem_read(NAMETABLE_START | (self.v & 0x0FFF));
+
                 self.store.attributes = if is_empty {
                     0xFF
                 } else {
@@ -603,35 +617,44 @@ impl PPU {
                 };
             }
             5 => {
-                // Fetch and store sprite tile patterns
-                self.fetch_sprite_pattern(sprite_idx, is_empty);
+                // Compute the pattern address and fetch the low plane
+                self.fetch_sprite_pattern_lo(is_empty);
             }
-            4 | 6 | 7 => {} // Unused cycles
+            7 => {
+                // Fetch the high plane and finalize the sprite slot
+                self.fetch_sprite_pattern_hi(sprite_idx, is_empty);
+            }
+            4 | 6 => {} // Address setup cycles
             _ => unreachable!(),
         }
     }
 
-    fn fetch_sprite_pattern(&mut self, sprite_idx: u8, is_empty: bool) {
+    fn fetch_sprite_pattern_lo(&mut self, is_empty: bool) {
         let y = self.store.y_coordinate;
         let tile = self.store.tile_number;
         let attr = self.store.attributes;
-        let x = self.store.x_coordinate;
         let flip_v = (attr & 0x80) != 0;
-        let flip_h = (attr & 0x40) != 0;
+        let sprite_height = self.sprite_height();
 
         // Row within the sprite: fetches on scanline N target scanline N+1,
-        // and row 0 of a sprite with coordinate Y lands on scanline Y+1
+        // and row 0 of a sprite with coordinate Y lands on scanline Y+1.
+        // Empty slots fetch row 0 of tile $FF so the bus pattern matches
+        // hardware even though the fetched data is discarded.
         let row = if is_empty {
             0
         } else {
+            // Only the low row bits address the tile: masking keeps the row
+            // in bounds if the sprite height changed after evaluation
             let raw_row = self.scanline.wrapping_sub(y as u16) as u8;
-            if self.store.sprite_height == 16 {
+            if sprite_height == 16 {
+                let raw_row = raw_row & 15;
                 if flip_v {
                     15 - raw_row
                 } else {
                     raw_row
                 }
             } else {
+                let raw_row = raw_row & 7;
                 if flip_v {
                     7 - raw_row
                 } else {
@@ -641,7 +664,7 @@ impl PPU {
         };
 
         // Calculate pattern table address
-        let pattern_addr = if self.store.sprite_height == 16 {
+        let pattern_addr = if sprite_height == 16 {
             // 8x16 sprites: tile bit 0 selects bank, bits 1-7 are top tile index
             let bank = (tile & 1) as u16 * 0x1000;
             let top_tile = (tile & 0xFE) as u16;
@@ -661,13 +684,22 @@ impl PPU {
             };
             bank + (tile as u16) * 16 + row as u16
         };
+        self.store.sprite_pattern_addr = pattern_addr;
 
-        // Fetch and optionally flip pattern data
-        let (mut lo, mut hi) = if is_empty {
-            (0, 0)
-        } else {
-            (self.mem_read(pattern_addr), self.mem_read(pattern_addr + 8))
-        };
+        // Fetch the low plane; empty slots store zeroes (transparent)
+        let lo = self.mem_read(pattern_addr);
+        self.store.sprite_pattern_lo = if is_empty { 0 } else { lo };
+    }
+
+    fn fetch_sprite_pattern_hi(&mut self, sprite_idx: u8, is_empty: bool) {
+        let attr = self.store.attributes;
+        let x = self.store.x_coordinate;
+        let flip_h = (attr & 0x40) != 0;
+
+        // Fetch the high plane; empty slots store zeroes (transparent)
+        let hi_read = self.mem_read(self.store.sprite_pattern_addr + 8);
+        let mut lo = self.store.sprite_pattern_lo;
+        let mut hi = if is_empty { 0 } else { hi_read };
         if flip_h {
             lo = lo.reverse_bits();
             hi = hi.reverse_bits();
