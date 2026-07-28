@@ -129,7 +129,7 @@ pub struct PPU {
     ppu_status: PPUSTATUS,
     oam_addr: u8,
     read_buffer: u8,
-    pub on_nmi: Box<dyn FnMut()>,
+    pub nmi_signal: bool,
 
     // PPU metadata
     mirroring: Mirroring,
@@ -172,7 +172,7 @@ impl PPU {
             ppu_status: PPUSTATUS::empty(),
             oam_addr: 0,
             read_buffer: 0,
-            on_nmi: Box::new(|| {}),
+            nmi_signal: false,
             mirroring: cartridge.mirroring,
             cycle: 0,
             scanline: 0,
@@ -694,7 +694,7 @@ impl PPU {
         let nmi_now = self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK)
             && self.ppu_status.contains(PPUSTATUS::IS_VBLANK);
         if nmi_now && !self.nmi_prev {
-            (self.on_nmi)();
+            self.nmi_signal = true;
         }
         self.nmi_prev = nmi_now;
     }

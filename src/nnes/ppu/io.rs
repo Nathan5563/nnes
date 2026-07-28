@@ -11,7 +11,7 @@ impl PPU {
         let now = self.ppu_ctrl.contains(PPUCTRL::NMI_ON_VBLANK)
             && self.ppu_status.contains(PPUSTATUS::IS_VBLANK);
         if !prev && now {
-            (self.on_nmi.as_mut())();
+            self.nmi_signal = true;
             self.nmi_prev = true;
         }
 

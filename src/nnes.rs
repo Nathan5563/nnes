@@ -21,12 +21,6 @@ impl NNES {
         let cpu = Rc::new(RefCell::new(CPU::new(bus)));
         // let apu = APU::new();
 
-        // Give PPU NMI callback access to CPU NMI field
-        let cpu_ref_for_nmi = cpu.clone();
-        ppu.borrow_mut().on_nmi = Box::new(move || {
-            cpu_ref_for_nmi.borrow_mut().nmi_pending = true;
-        });
-
         NNES {
             master_clock: 0,
             cpu,
@@ -58,7 +52,13 @@ impl NNES {
 
         // PPU runs at master/4
         if self.master_clock % 4 == 0 {
-            self.ppu.borrow_mut().tick();
+            let mut ppu_ref = self.ppu.borrow_mut();
+            ppu_ref.tick();
+            if ppu_ref.nmi_signal {
+                ppu_ref.nmi_signal = false;
+                drop(ppu_ref);
+                self.cpu.borrow_mut().nmi_pending = true;
+            }
         }
 
         // // APU runs at master/24
