@@ -984,7 +984,6 @@ impl CPU {
         true
     }
 
-
     fn rmw_combo(
         &mut self,
         subcycle: u8,
@@ -1080,8 +1079,6 @@ impl CPU {
         )
     }
 
-
-
     fn jam(&mut self, _subcycle: u8) -> bool {
         // JAM wedges the CPU: nothing executes and no interrupt is serviced
         // until reset, including one already latched during the fetch cycle
@@ -1114,8 +1111,7 @@ impl CPU {
         self.a = ((self.a & self.store.data) >> 1) | ((cf as u8) << 7);
         self.set_nz(self.a);
         self.p.set(Flags::CARRY, bit_6(self.a) != 0);
-        self.p
-            .set(Flags::OVERFLOW, bit_6(self.a) != bit_5(self.a));
+        self.p.set(Flags::OVERFLOW, bit_6(self.a) != bit_5(self.a));
         true
     }
 
