@@ -6,7 +6,7 @@ A cycle-accurate NES emulator written in Rust. NNES implements the 2A03 CPU and 
 
 ## Features
 
-- **Cycle-Accurate 6502 CPU**: Complete implementation of all official opcodes with per-cycle timing
+- **Cycle-Accurate 6502 CPU**: Complete implementation of all official and unofficial opcodes with per-cycle timing
   - Finite state machine architecture (Fetch → Decode → Execute)
   - All addressing modes with correct cycle counts
   - Proper interrupt handling (NMI, IRQ, BRK) with interrupt hijacking
@@ -173,7 +173,7 @@ Sprite evaluation occurs during visible scanlines, with up to 8 sprites per scan
 - [x] PPU background rendering
 - [x] PPU sprite rendering
 - [ ] APU audio emulation
-- [ ] Unofficial CPU opcodes
+- [x] Unofficial CPU opcodes
 - [ ] Additional mappers (MMC1, MMC3, etc.)
 - [ ] Save states
 - [ ] Debugger UI with egui
