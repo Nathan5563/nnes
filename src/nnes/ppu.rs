@@ -369,6 +369,9 @@ impl PPU {
 
             // Background tile fetching
             self.tick_background_fetch();
+        } else if VISIBLE_CYCLES.contains(&self.cycle) {
+            // Forced blank: the screen shows the backdrop color
+            self.draw_backdrop();
         }
     }
 

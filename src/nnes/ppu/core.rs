@@ -102,6 +102,21 @@ impl PPU {
         }
     }
 
+    pub fn draw_backdrop(&mut self) {
+        let x = self.cycle - 1; // this is called during cycles [1,256]
+        let y = self.scanline;
+        let idx = (y * 256 + x) as usize;
+
+        // Backdrop color, or the palette entry at v if v points into
+        // palette space (the background palette hack)
+        let palette_addr = if self.v & 0x3F00 == 0x3F00 {
+            self.get_palette_addr(self.v)
+        } else {
+            0
+        };
+        self.back[idx] = self.palette[palette_addr as usize] % 64;
+    }
+
     pub fn fetch_nametable(&mut self) {
         // get nametable offset from v[12:0]: ... NN YYYYY XXXXX
         let offset = self.v & 0b11_11111_11111;
