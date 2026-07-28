@@ -125,16 +125,34 @@ impl BusDevice for Controllers {
         } else {
             &mut self.pad2
         };
-        let data = bit_7(pad.state);
-        pad.state <<= 1;
-        data
+        let bit = if self.strobe {
+            // While the strobe is high the shift registers continuously
+            // reload, so reads return the current state of A without
+            // consuming anything.
+            bit_7(pad.active)
+        } else {
+            let b = bit_7(pad.state);
+            // Official controllers shift in 1s, so reads after the 8th
+            // return 1.
+            pad.state = (pad.state << 1) | 1;
+            b
+        };
+        // D0 is driven by the controller; the upper bits come from open bus,
+        // effectively the high byte of the $40xx port address.
+        0x40 | bit
     }
 
-    fn mem_write(&mut self, addr: u16, _data: u8) {
+    fn mem_write(&mut self, addr: u16, data: u8) {
         // $4017 writes go to the APU frame counter, not the controllers
         if addr == 0x4016 {
-            self.pad1.state = self.pad1.active;
-            self.pad2.state = self.pad2.active;
+            let s = data & 1 != 0;
+            // Latch the button state for serial reading on the 1->0
+            // transition of the strobe bit.
+            if self.strobe && !s {
+                self.pad1.state = self.pad1.active;
+                self.pad2.state = self.pad2.active;
+            }
+            self.strobe = s;
         }
     }
 
@@ -248,6 +266,7 @@ pub fn memory_map(
     memory_handlers.push(Box::new(Controllers {
         pad1: Joypad { active: 0, state: 0 },
         pad2: Joypad { active: 0, state: 0 },
+        strobe: false,
     }));
     if cartridge.has_trainer || cartridge.has_sram {
         memory_handlers.push(Box::new(Sram {

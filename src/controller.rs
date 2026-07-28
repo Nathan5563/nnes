@@ -8,6 +8,7 @@ pub struct Joypad {
 pub struct Controllers {
     pub pad1: Joypad,
     pub pad2: Joypad,
+    pub strobe: bool,
 }
 
 impl Controllers {
@@ -66,6 +67,17 @@ impl Controllers {
         }
         if keystate.is_scancode_pressed(Scancode::Period) {
             self.pad2.active |= 0b1000_0000; // A
+        }
+
+        // A real D-pad cannot report Left+Right or Up+Down simultaneously;
+        // games may glitch if both bits of an opposing pair are set.
+        for pad in [&mut self.pad1, &mut self.pad2] {
+            if pad.active & 0b0000_0011 == 0b0000_0011 {
+                pad.active &= !0b0000_0011;
+            }
+            if pad.active & 0b0000_1100 == 0b0000_1100 {
+                pad.active &= !0b0000_1100;
+            }
         }
     }
 }
