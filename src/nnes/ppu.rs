@@ -138,6 +138,8 @@ pub struct PPU {
     ppu_status: PPUSTATUS,
     oam_addr: u8,
     read_buffer: u8,
+    v_pending: u16,
+    v_delay: u8,
     pub nmi_signal: bool,
 
     // PPU metadata
@@ -184,6 +186,8 @@ impl PPU {
             ppu_status: PPUSTATUS::empty(),
             oam_addr: 0,
             read_buffer: 0,
+            v_pending: 0,
+            v_delay: 0,
             nmi_signal: false,
             mirroring: cartridge.mirroring,
             cycle: 0,
@@ -269,6 +273,14 @@ impl PPU {
     }
 
     pub fn tick(&mut self) {
+        // Apply the delayed copy of t into v from the second PPUADDR write
+        if self.v_delay > 0 {
+            self.v_delay -= 1;
+            if self.v_delay == 0 {
+                self.v = self.v_pending;
+            }
+        }
+
         // ==================================================================
         // PPU Frame Structure (262 scanlines × 341 cycles):
         //   Scanline 261 (pre-render): Clear flags, prefetch first tiles

@@ -120,8 +120,10 @@ impl PPU {
             let lo = data as u16;
             // final address: ttt tt ttlll lllll
             self.t = (self.t & 0b1_111_11_11000_00000) | lo;
-            // copy finalized temporary address into vram address
-            self.v = self.t;
+            // the finalized temporary address is copied into the vram
+            // address ~3 dots after the write, not instantly
+            self.v_pending = self.t;
+            self.v_delay = 3;
         }
         self.w ^= 1;
     }
