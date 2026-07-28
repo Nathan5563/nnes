@@ -543,11 +543,9 @@ impl CPU {
                     NMI_VECTOR => {
                         self.nmi_pending = false;
                     }
-                    IRQ_VECTOR => {
-                        if self.hijacked {
-                            self.irq_pending = false
-                        };
-                    }
+                    // IRQ is level-triggered: the device holds the line
+                    // until acknowledged, so the CPU never clears it
+                    IRQ_VECTOR => {}
                     _ => unreachable!(),
                 }
                 self.store.lo = self.bus.mem_read(self.store.vector);
@@ -561,6 +559,7 @@ impl CPU {
 
                 self.software_interrupt = false;
                 self.servicing_interrupt = false;
+                self.hijacked = false;
                 true
             }
             _ => unreachable!(),
