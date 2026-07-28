@@ -81,6 +81,9 @@ pub struct CPUStore {
     pub oam_dma_page: u16,
     pub oam_dma_index: u8,
     pub oam_dma_data: u16,
+    oam_dma_align: bool,
+    oam_dma_read_pending: bool,
+    oam_dma_latch: u8,
 }
 
 impl CPU {
@@ -107,6 +110,9 @@ impl CPU {
                 oam_dma_page: 0,
                 oam_dma_index: 0,
                 oam_dma_data: 512,
+                oam_dma_align: false,
+                oam_dma_read_pending: false,
+                oam_dma_latch: 0,
             },
             software_interrupt: false,
             nmi_pending: false,
@@ -164,39 +170,46 @@ impl CPU {
             // OAM DMA trigger: DMA transfer from CPU memory page to PPU OAM.
             self.store.oam_dma_page = (self.bus.peek(0x4014) as u16) << 8;
             self.store.oam_dma_index = 0;
-            self.store.oam_dma_data = 0;
+            self.store.oam_dma_data = 0x200;
+            self.store.oam_dma_align = self.total_ticks % 2 != 0;
+            self.store.oam_dma_read_pending = false;
             self.bus.oam_dma_start();
-            // The DMA transfer takes 513 CPU cycles.
-            // If the CPU starts/ends on an odd cycle, it ticks to 514.
-            if self.total_ticks % 2 != 0 {
-                self.total_ticks += 1;
-                return;
-            }
-            // By the time this completes, the CPU may have ticked once.
+            // The CPU is halted for this cycle while the DMA unit takes over.
+            // The transfer takes 513 CPU cycles: this halt plus 256 get/put
+            // pairs, or 514 with the extra alignment cycle below.
+            self.total_ticks += 1;
+            return;
         }
 
         if self.bus.oam_dma_running() {
-            // In the original hardware, each byte took two ticks for a read and write.
-            // Because the CPU can't write to the PPU here, simulate two-cycle reads.
-            // Writing will be handled instantaneously by the NNES struct.
-            if self.total_ticks % 2 == 0 {
-                self.store.oam_dma_data = self.bus.mem_read(
-                    self.store.oam_dma_page + self.store.oam_dma_index as u16,
-                ) as u16;
-                self.store.oam_dma_index =
-                    self.store.oam_dma_index.wrapping_add(1);
-                if self.store.oam_dma_index == 0 {
-                    // Wrapped around from 255, completed OAM DMA
-                    self.bus.oam_dma_finish();
-                } else {
-                    self.total_ticks += 1;
-                    return;
-                }
-            } else {
+            if self.store.oam_dma_align {
+                // Triggered on an odd cycle: wait one cycle so the get/put
+                // pairs stay aligned, stretching the transfer to 514 cycles.
+                self.store.oam_dma_align = false;
                 self.total_ticks += 1;
                 return;
             }
-            // By the time this completes, the CPU has ticked 512 times.
+            if !self.store.oam_dma_read_pending {
+                // Get cycle: read the next byte from the CPU memory page.
+                self.store.oam_dma_latch = self.bus.mem_read(
+                    self.store.oam_dma_page + self.store.oam_dma_index as u16,
+                );
+                self.store.oam_dma_read_pending = true;
+                self.total_ticks += 1;
+                return;
+            }
+            // Put cycle: because the CPU can't write to the PPU here, expose
+            // the byte for the NNES struct to forward through OAMDATA.
+            self.store.oam_dma_data = self.store.oam_dma_latch as u16;
+            self.store.oam_dma_read_pending = false;
+            self.store.oam_dma_index =
+                self.store.oam_dma_index.wrapping_add(1);
+            if self.store.oam_dma_index == 0 {
+                // Wrapped around from 255, completed OAM DMA
+                self.bus.oam_dma_finish();
+            }
+            self.total_ticks += 1;
+            return;
         }
 
         //==================================================================
