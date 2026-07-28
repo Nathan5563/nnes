@@ -9,20 +9,20 @@ impl PPU {
         // --- Background pixel ---
         let mut bg_pattern = 0u8;
         let mut bg_palette = 0u8;
-        if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND) {
-            if x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_BACKGROUND) {
-                // Select pixel from pattern table shift registers using fine x scroll
-                let bit_mux = 0x8000 >> self.x;
-                let p1 = ((self.pattern_lo & bit_mux) > 0) as u8;
-                let p2 = ((self.pattern_hi & bit_mux) > 0) as u8;
+        if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND)
+            && (x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_BACKGROUND))
+        {
+            // Select pixel from pattern table shift registers using fine x scroll
+            let bit_mux = 0x8000 >> self.x;
+            let p1 = ((self.pattern_lo & bit_mux) > 0) as u8;
+            let p2 = ((self.pattern_hi & bit_mux) > 0) as u8;
 
-                // Select palette from attribute table shift registers
-                let a1 = ((self.attribute_lo & bit_mux) > 0) as u8;
-                let a2 = ((self.attribute_hi & bit_mux) > 0) as u8;
+            // Select palette from attribute table shift registers
+            let a1 = ((self.attribute_lo & bit_mux) > 0) as u8;
+            let a2 = ((self.attribute_hi & bit_mux) > 0) as u8;
 
-                bg_pattern = (p2 << 1) | p1;
-                bg_palette = (a2 << 1) | a1;
-            }
+            bg_pattern = (p2 << 1) | p1;
+            bg_palette = (a2 << 1) | a1;
         }
 
         // --- Sprite pixel ---
@@ -31,26 +31,26 @@ impl PPU {
         let mut sprite_priority = false; // false = in front of BG, true = behind BG
         let mut sprite_0_visible = false;
 
-        if self.ppu_mask.contains(PPUMASK::SHOW_SPRITES) {
-            if x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_SPRITES) {
-                // Check each sprite (priority is by index - lower index = higher priority)
-                for i in 0..8 {
-                    let sprite = &self.sprite_render[i];
-                    if sprite.x_counter == 0 {
-                        // This sprite is active at this X position
-                        // Get the leftmost pixel (bit 7)
-                        let p1 = (sprite.pattern_lo >> 7) & 1;
-                        let p2 = (sprite.pattern_hi >> 7) & 1;
-                        let pattern = (p2 << 1) | p1;
+        if self.ppu_mask.contains(PPUMASK::SHOW_SPRITES)
+            && (x >= 8 || self.ppu_mask.contains(PPUMASK::NO_CLIP_SPRITES))
+        {
+            // Check each sprite (priority is by index - lower index = higher priority)
+            for i in 0..8 {
+                let sprite = &self.sprite_render[i];
+                if sprite.x_counter == 0 {
+                    // This sprite is active at this X position
+                    // Get the leftmost pixel (bit 7)
+                    let p1 = (sprite.pattern_lo >> 7) & 1;
+                    let p2 = (sprite.pattern_hi >> 7) & 1;
+                    let pattern = (p2 << 1) | p1;
 
-                        if pattern != 0 && sprite_pattern == 0 {
-                            // First non-transparent sprite pixel wins
-                            sprite_pattern = pattern;
-                            sprite_palette = sprite.attributes & 0x03;
-                            sprite_priority = (sprite.attributes & 0x20) != 0;
-                            if sprite.is_sprite_0 && i == 0 {
-                                sprite_0_visible = true;
-                            }
+                    if pattern != 0 && sprite_pattern == 0 {
+                        // First non-transparent sprite pixel wins
+                        sprite_pattern = pattern;
+                        sprite_palette = sprite.attributes & 0x03;
+                        sprite_priority = (sprite.attributes & 0x20) != 0;
+                        if sprite.is_sprite_0 && i == 0 {
+                            sprite_0_visible = true;
                         }
                     }
                 }
@@ -60,12 +60,13 @@ impl PPU {
         // --- Sprite 0 hit detection ---
         // Sprite 0 hit occurs when both sprite 0 and background are opaque
         // and we're not at x=255 (due to timing quirk)
-        if sprite_0_visible && bg_pattern != 0 && x < 255 {
-            if self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND)
-                && self.ppu_mask.contains(PPUMASK::SHOW_SPRITES)
-            {
-                self.ppu_status.insert(PPUSTATUS::SPRITE0_HIT);
-            }
+        if sprite_0_visible
+            && bg_pattern != 0
+            && x < 255
+            && self.ppu_mask.contains(PPUMASK::SHOW_BACKGROUND)
+            && self.ppu_mask.contains(PPUMASK::SHOW_SPRITES)
+        {
+            self.ppu_status.insert(PPUSTATUS::SPRITE0_HIT);
         }
 
         // --- Multiplexing: determine final pixel color ---

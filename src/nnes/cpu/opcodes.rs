@@ -385,10 +385,10 @@ impl CPU {
                     u16::from_le_bytes([self.store.lo, self.store.hi]);
 
                 self.page_crossed = self.store.data > self.store.lo;
-                let write_ins = match self.ins.unwrap().code {
-                    0x9D | 0x1E | 0x3E | 0x5E | 0x7E | 0xDE | 0xFE => true,
-                    _ => false,
-                };
+                let write_ins = matches!(
+                    self.ins.unwrap().code,
+                    0x9D | 0x1E | 0x3E | 0x5E | 0x7E | 0xDE | 0xFE
+                );
                 // Write instructions already count the dummy read cycle
                 if self.page_crossed && !write_ins {
                     self.required_ins_ticks += 1;
@@ -422,10 +422,7 @@ impl CPU {
                     u16::from_le_bytes([self.store.lo, self.store.hi]);
 
                 self.page_crossed = self.store.data > self.store.lo;
-                let write_ins = match self.ins.unwrap().code {
-                    0x99 => true,
-                    _ => false,
-                };
+                let write_ins = matches!(self.ins.unwrap().code, 0x99);
                 // Write instructions already count the dummy read cycle
                 if self.page_crossed && !write_ins {
                     self.required_ins_ticks += 1;
@@ -490,10 +487,7 @@ impl CPU {
                     u16::from_le_bytes([self.store.lo, self.store.hi]);
 
                 self.page_crossed = self.store.data > self.store.lo;
-                let write_ins = match self.ins.unwrap().code {
-                    0x91 => true,
-                    _ => false,
-                };
+                let write_ins = matches!(self.ins.unwrap().code, 0x91);
                 if self.page_crossed || write_ins {
                     self.required_ins_ticks += 1;
                 }

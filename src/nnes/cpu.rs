@@ -313,15 +313,9 @@ impl CPU {
         }
         // Poll for interrupts if the second to last cycle has ended
         if self.required_ins_ticks - self.curr_ins_ticks as u8 == 2 {
-            self.servicing_interrupt = if self.nmi_pending {
-                true
-            } else if self.irq_pending
-                && !self.p.intersects(Flags::INTERRUPT_DISABLE)
-            {
-                true
-            } else {
-                false
-            };
+            self.servicing_interrupt = self.nmi_pending
+                || (self.irq_pending
+                    && !self.p.intersects(Flags::INTERRUPT_DISABLE));
         }
     }
 

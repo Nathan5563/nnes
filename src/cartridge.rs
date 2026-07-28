@@ -1,5 +1,4 @@
 use crate::utils::{bit_0, bit_1, bit_3, byte_from_nibbles, hi_nibble};
-use std::iter;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mirroring {
@@ -11,7 +10,7 @@ pub enum Mirroring {
 const NES_MAGIC: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 
 // Currently only supports mapper 0 (iNES, archaic iNES, or NES 2.0 headers).
-pub fn validate_rom(rom: &Vec<u8>) -> Result<u8, String> {
+pub fn validate_rom(rom: &[u8]) -> Result<u8, String> {
     // The header alone is 16 bytes
     if rom.len() < 16 {
         return Err("error: file too small".to_string());
@@ -85,7 +84,7 @@ pub struct Cartridge {
 }
 
 impl Cartridge {
-    pub fn new(rom: &Vec<u8>) -> Self {
+    pub fn new(rom: &[u8]) -> Self {
         /*  iNES file sections, in order:
             - Header,               16 B
             - Trainer,              0 or 512 B
@@ -139,11 +138,10 @@ impl Cartridge {
         let prg_start = 16 + trainer_size;
         let chr_start = prg_start + prg_rom_size;
 
-        let sram: Vec<u8> = iter::repeat(0u8)
-            .take(0x1000)
-            .chain(rom[16..16 + trainer_size].iter().cloned())
-            .chain(iter::repeat(0u8).take(sram_size - 0x1000 - trainer_size))
-            .collect();
+        // The trainer, when present, loads at $7000 (offset 0x1000 in SRAM)
+        let mut sram = vec![0u8; sram_size];
+        sram[0x1000..0x1000 + trainer_size]
+            .copy_from_slice(&rom[16..16 + trainer_size]);
         let prg_rom = rom[prg_start..prg_start + prg_rom_size].to_vec();
         let chr_rom = if has_chr_ram {
             vec![0u8; 0x2000]

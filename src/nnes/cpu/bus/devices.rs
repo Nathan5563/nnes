@@ -5,6 +5,12 @@ use crate::{
 };
 use std::{cell::RefCell, rc::Rc};
 
+// Two bytes past the 2 kB of RAM latch a pending OAM DMA request: a marker
+// at OAM_DMA_FLAG and the source page written to $4014 at OAM_DMA_PAGE
+const OAM_DMA_FLAG: usize = 0x0800;
+const OAM_DMA_PAGE: usize = 0x0801;
+const OAM_DMA_REQUESTED: u8 = 1;
+
 pub struct RAM {
     ram: [u8; 0x0802],
     oam_dma_running: bool,
@@ -25,8 +31,8 @@ impl BusDevice for RAM {
 
     fn mem_write(&mut self, addr: u16, data: u8) {
         if addr == 0x4014 {
-            self.ram[0x0800] = 42;
-            self.ram[0x0801] = data;
+            self.ram[OAM_DMA_FLAG] = OAM_DMA_REQUESTED;
+            self.ram[OAM_DMA_PAGE] = data;
         } else {
             self.ram[addr as usize & 0x07FF] = data;
         }
@@ -34,14 +40,14 @@ impl BusDevice for RAM {
 
     fn peek(&self, addr: u16) -> u8 {
         if addr == 0x4014 {
-            self.ram[0x0801]
+            self.ram[OAM_DMA_PAGE]
         } else {
             self.ram[addr as usize & 0x07FF]
         }
     }
 
     fn oam_dma_pending(&self) -> bool {
-        if self.ram[0x0800] == 42 {
+        if self.ram[OAM_DMA_FLAG] == OAM_DMA_REQUESTED {
             true
         } else {
             false
@@ -49,8 +55,8 @@ impl BusDevice for RAM {
     }
 
     fn oam_dma_start(&mut self) {
-        self.ram[0x0800] = 0;
-        self.ram[0x0801] = 0;
+        self.ram[OAM_DMA_FLAG] = 0;
+        self.ram[OAM_DMA_PAGE] = 0;
         self.oam_dma_running = true;
     }
 
