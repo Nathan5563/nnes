@@ -2,7 +2,7 @@
 
 A cycle-accurate NES emulator written in Rust. NNES implements the full 2A03 CPU, 2C02 PPU, and 2A03 APU with per-cycle accuracy, and is feature-complete for NROM (mapper 0) games, with plans to support additional mappers in the future.
 
-<img src="demos/donkey_kong.png" width="400px">
+<img src="demos/donkey_kong.png" width="400px"> <img src="demos/smb.png" width="400px">
 
 ## Features
 
