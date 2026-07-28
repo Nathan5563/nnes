@@ -97,6 +97,9 @@ impl PPU {
             return;
         }
 
+        // The three unimplemented bits of each sprite's attribute byte do
+        // not exist in OAM and always read back as 0
+        let data = if self.oam_addr & 3 == 2 { data & 0xE3 } else { data };
         self.oam[self.oam_addr as usize] = data;
         self.oam_addr = self.oam_addr.wrapping_add(1);
     }
