@@ -31,11 +31,12 @@ impl PPU {
         let bit_7 = self.ppu_status.contains(PPUSTATUS::IS_VBLANK) as u8;
         let bit_6 = self.ppu_status.contains(PPUSTATUS::SPRITE0_HIT) as u8;
         let bit_5 = self.ppu_status.contains(PPUSTATUS::SPRITE_OVERFLOW) as u8;
-        let bit_4 = bit_4(self.open_bus);
-        let bit_3 = bit_3(self.open_bus);
-        let bit_2 = bit_2(self.open_bus);
-        let bit_1 = bit_1(self.open_bus);
-        let bit_0 = bit_0(self.open_bus);
+        let open_bus = self.decayed_open_bus();
+        let bit_4 = bit_4(open_bus);
+        let bit_3 = bit_3(open_bus);
+        let bit_2 = bit_2(open_bus);
+        let bit_1 = bit_1(open_bus);
+        let bit_0 = bit_0(open_bus);
 
         // side effects of reading PPUSTATUS
         self.ppu_status.remove(PPUSTATUS::IS_VBLANK);
@@ -147,7 +148,7 @@ impl PPU {
             } else {
                 0x3F
             };
-            data = (self.open_bus & 0xC0) | (data & mask);
+            data = (self.decayed_open_bus() & 0xC0) | (data & mask);
         }
         self.increment_v();
         data
@@ -161,14 +162,29 @@ impl PPU {
 
     // Public register APIs
     pub fn reg_read(&mut self, reg: u8) -> u8 {
-        let data = match reg {
-            2 => self.read_ppu_status(),
-            4 => self.read_oam_data(),
-            7 => self.read_ppu_data(),
-            _ => self.open_bus,
-        };
-        self.open_bus = data;
-        data
+        match reg {
+            2 => {
+                // PPUSTATUS only drives bits 7-5 of the data bus
+                let data = self.read_ppu_status();
+                self.refresh_open_bus(data, 0xE0);
+                data
+            }
+            4 => {
+                let data = self.read_oam_data();
+                self.refresh_open_bus(data, 0xFF);
+                data
+            }
+            7 => {
+                // palette reads leave bits 7-6 of the data bus undriven
+                let palette_read = (self.v & 0x3FFF) >= 0x3F00;
+                let data = self.read_ppu_data();
+                let mask = if palette_read { 0x3F } else { 0xFF };
+                self.refresh_open_bus(data, mask);
+                data
+            }
+            // reading a write-only register returns the open bus contents
+            _ => self.decayed_open_bus(),
+        }
     }
 
     pub fn reg_write(&mut self, reg: u8, data: u8) {
@@ -176,7 +192,7 @@ impl PPU {
         // ~29658 CPU clocks (88974 PPU dots) after power/reset, but they
         // still drive the PPU data bus
         if self.total_cycles < 88974 && matches!(reg, 0 | 1 | 5 | 6) {
-            self.open_bus = data;
+            self.refresh_open_bus(data, 0xFF);
             return;
         }
 
@@ -190,10 +206,33 @@ impl PPU {
             7 => self.write_ppu_data(data),
             _ => {}
         }
-        self.open_bus = data;
+        self.refresh_open_bus(data, 0xFF);
     }
 
     // Helpers
+    // For each bit set in mask, copy that bit of value onto the open bus
+    // and restart its decay timer
+    fn refresh_open_bus(&mut self, value: u8, mask: u8) {
+        for bit in 0..8 {
+            if mask & (1 << bit) != 0 {
+                self.open_bus =
+                    (self.open_bus & !(1 << bit)) | (value & (1 << bit));
+                self.open_bus_decay[bit] = self.total_cycles;
+            }
+        }
+    }
+
+    // The open bus latch decays to 0 in ~600 ms (~3.2 million dots),
+    // tracked per bit
+    fn decayed_open_bus(&mut self) -> u8 {
+        for bit in 0..8 {
+            if self.total_cycles - self.open_bus_decay[bit] > 3_200_000 {
+                self.open_bus &= !(1 << bit);
+            }
+        }
+        self.open_bus
+    }
+
     fn increment_v(&mut self) {
         if self.ppu_ctrl.contains(PPUCTRL::VRAM_INCREMENT) {
             self.v = self.v.wrapping_add(32);
