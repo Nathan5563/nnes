@@ -84,7 +84,14 @@ impl PPU {
         };
 
         let palette_addr = self.get_palette_addr(color as u16);
-        self.back[idx] = self.palette[palette_addr as usize] % 64;
+        let mask = if self.ppu_mask.contains(PPUMASK::GRAYSCALE) {
+            0x30
+        } else {
+            0x3F
+        };
+        let emphasis = (self.ppu_mask.bits() >> 5) as u16;
+        self.back[idx] =
+            (emphasis << 6) | (self.palette[palette_addr as usize] as u16 & mask);
 
         // --- Update sprite shift registers ---
         self.update_sprite_shifters();
@@ -114,7 +121,14 @@ impl PPU {
         } else {
             0
         };
-        self.back[idx] = self.palette[palette_addr as usize] % 64;
+        let mask = if self.ppu_mask.contains(PPUMASK::GRAYSCALE) {
+            0x30
+        } else {
+            0x3F
+        };
+        let emphasis = (self.ppu_mask.bits() >> 5) as u16;
+        self.back[idx] =
+            (emphasis << 6) | (self.palette[palette_addr as usize] as u16 & mask);
     }
 
     pub fn fetch_nametable(&mut self) {

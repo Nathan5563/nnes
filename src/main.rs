@@ -103,12 +103,23 @@ fn main() -> Result<(), String> {
             nnes.tick();
         }
 
-        // 2) Map ppu.front (u8 indices) -> raw RGB bytes
+        // 2) Map ppu.front (palette index + emphasis bits) -> raw RGB bytes
         texture.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
-            for (i, &palette_idx) in
-                nnes.ppu.borrow_mut().front.iter().enumerate()
-            {
-                let (r, g, b) = NES_PALETTE[palette_idx as usize];
+            for (i, &px) in nnes.ppu.borrow_mut().front.iter().enumerate() {
+                let (mut r, mut g, mut b) = NES_PALETTE[(px & 0x3F) as usize];
+                let e = (px >> 6) & 0b111;
+                if e != 0 {
+                    // Attenuate every channel whose emphasis bit is not set
+                    if e & 0b001 == 0 {
+                        r = (r as u16 * 189 / 256) as u8;
+                    }
+                    if e & 0b010 == 0 {
+                        g = (g as u16 * 189 / 256) as u8;
+                    }
+                    if e & 0b100 == 0 {
+                        b = (b as u16 * 189 / 256) as u8;
+                    }
+                }
                 let base = i * 3;
                 buffer[base + 0] = r;
                 buffer[base + 1] = g;

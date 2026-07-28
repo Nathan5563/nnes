@@ -129,8 +129,8 @@ pub struct PPU {
     open_bus: u8,
 
     // Image buffers
-    pub front: [u8; 256 * 240],
-    pub back: [u8; 256 * 240],
+    pub front: [u16; 256 * 240],
+    pub back: [u16; 256 * 240],
 
     // I/O operations
     ppu_ctrl: PPUCTRL,
