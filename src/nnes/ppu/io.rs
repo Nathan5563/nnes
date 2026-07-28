@@ -137,8 +137,17 @@ impl PPU {
             self.read_buffer = data;
             data = buf;
         } else {
-            // access palette directly
+            // access palette directly; the buffer is refilled from the
+            // nametable byte "underneath" the palette
             self.read_buffer = self.mem_read(self.v - 0x1000);
+            // bits 7-6 come from the PPU open bus, and greyscale mode
+            // masks the palette value
+            let mask = if self.ppu_mask.contains(PPUMASK::GRAYSCALE) {
+                0x30
+            } else {
+                0x3F
+            };
+            data = (self.open_bus & 0xC0) | (data & mask);
         }
         self.increment_v();
         data
