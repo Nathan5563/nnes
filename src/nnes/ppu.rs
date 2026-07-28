@@ -488,12 +488,18 @@ impl PPU {
             self.oam_addr_base = self.oam_addr;
         }
 
-        let oam_idx = (self.oam_addr_base as usize
+        let oam_idx = self.oam_addr_base as usize
             + 4 * self.store.curr_sprite as usize
-            + self.store.curr_sprite_byte as usize)
-            & 0xFF;
+            + self.store.curr_sprite_byte as usize;
         let secondary_idx = 4 * self.store.accepted_sprite as usize
             + self.store.curr_sprite_byte as usize;
+
+        // No more sprites are found once the end of OAM is reached, which
+        // hides any sprites before the starting OAMADDR
+        if oam_idx > 0xFF {
+            self.store.sprite_eval_state = SpriteEvalState::Done;
+            return;
+        }
 
         if self.cycle % 2 == 1 {
             if self.store.sprite_eval_state == SpriteEvalState::Done {
