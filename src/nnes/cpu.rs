@@ -325,6 +325,17 @@ impl CPU {
         }
     }
 
+    pub fn suppress_nmi(&mut self) {
+        // A PPUSTATUS read in the vblank race window revokes the NMI. If
+        // this cycle's poll already latched it, rescind that decision too,
+        // keeping the latch only if an IRQ is independently eligible.
+        self.nmi_pending = false;
+        if self.state != CPUState::Interrupt {
+            self.servicing_interrupt = self.irq_pending
+                && !self.p.intersects(Flags::INTERRUPT_DISABLE);
+        }
+    }
+
     fn poll_hijacks(&mut self) {
         if self.curr_ins_ticks <= 3 {
             if self.nmi_pending {

@@ -62,7 +62,7 @@ impl NNES {
             let mut ppu_ref = self.ppu.borrow_mut();
             if ppu_ref.nmi_suppress {
                 ppu_ref.nmi_suppress = false;
-                cpu_ref.nmi_pending = false;
+                cpu_ref.suppress_nmi();
             }
         }
 
