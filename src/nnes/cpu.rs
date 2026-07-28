@@ -130,7 +130,15 @@ impl CPU {
 
     pub fn reset(&mut self) {
         self.jammed = false;
+        self.state = CPUState::Fetch;
+        self.ins = None;
+        self.curr_ins_ticks = 0;
+        self.required_ins_ticks = 0;
+        self.nmi_pending = false;
         self.servicing_interrupt = false;
+        self.software_interrupt = false;
+        self.hijacked = false;
+        self.suppress_poll = false;
         self.store.lo = self.bus.mem_read(RESET_VECTOR);
         self.store.hi = self.bus.mem_read(RESET_VECTOR + 1);
         self.pc = u16::from_le_bytes([self.store.lo, self.store.hi]);

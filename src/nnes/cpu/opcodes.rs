@@ -1084,8 +1084,9 @@ impl CPU {
 
     fn jam(&mut self, _subcycle: u8) -> bool {
         // JAM wedges the CPU: nothing executes and no interrupt is serviced
-        // until reset
+        // until reset, including one already latched during the fetch cycle
         self.jammed = true;
+        self.servicing_interrupt = false;
         true
     }
 
