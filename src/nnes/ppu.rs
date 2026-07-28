@@ -142,6 +142,8 @@ pub struct PPU {
     v_pending: u16,
     v_delay: u8,
     pub nmi_signal: bool,
+    pub nmi_suppress: bool,
+    vbl_race_skip: bool,
 
     // PPU metadata
     mirroring: Mirroring,
@@ -191,6 +193,8 @@ impl PPU {
             v_pending: 0,
             v_delay: 0,
             nmi_signal: false,
+            nmi_suppress: false,
+            vbl_race_skip: false,
             mirroring: cartridge.mirroring,
             cycle: 0,
             scanline: 0,
@@ -754,7 +758,13 @@ impl PPU {
     fn handle_vblank_flags(&mut self) {
         // Scanline 241, cycle 1: Enter VBlank
         if self.scanline == 241 && self.cycle == 1 {
-            self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
+            // A PPUSTATUS read one dot earlier keeps the flag (and the NMI)
+            // from being set for this frame
+            if self.vbl_race_skip {
+                self.vbl_race_skip = false;
+            } else {
+                self.ppu_status.insert(PPUSTATUS::IS_VBLANK);
+            }
             // Swap front/back buffers to present completed frame
             std::mem::swap(&mut self.front, &mut self.back);
         }

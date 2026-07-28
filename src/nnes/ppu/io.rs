@@ -43,6 +43,18 @@ impl PPU {
         self.w = 0;
         self.nmi_prev = false;
 
+        // Race near the vblank-set dot (241, 1): a read one dot before
+        // returns 0 and keeps the flag from being set; a read one or two
+        // dots after returns 1 but suppresses that frame's NMI
+        if self.scanline == 241 {
+            if self.cycle == 1 {
+                self.vbl_race_skip = true;
+            } else if (2..=3).contains(&self.cycle) {
+                self.nmi_signal = false;
+                self.nmi_suppress = true;
+            }
+        }
+
         byte_from_bits(bit_7, bit_6, bit_5, bit_4, bit_3, bit_2, bit_1, bit_0)
     }
 

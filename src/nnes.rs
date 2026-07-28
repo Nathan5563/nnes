@@ -59,6 +59,11 @@ impl NNES {
                     .reg_write(4, cpu_ref.store.oam_dma_data as u8);
                 cpu_ref.store.oam_dma_data = 0x200;
             }
+            let mut ppu_ref = self.ppu.borrow_mut();
+            if ppu_ref.nmi_suppress {
+                ppu_ref.nmi_suppress = false;
+                cpu_ref.nmi_pending = false;
+            }
         }
 
         // // APU runs at master/24
