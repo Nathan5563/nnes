@@ -1,6 +1,6 @@
 # NNES
 
-A cycle-accurate NES emulator written in Rust. NNES implements the 2A03 CPU and 2C02 PPU with per-cycle accuracy, aiming for perfect emulation of NROM (mapper 0) games with plans to support additional mappers in the future.
+A cycle-accurate NES emulator written in Rust. NNES implements the full 2A03 CPU, 2C02 PPU, and 2A03 APU with per-cycle accuracy, and is feature-complete for NROM (mapper 0) games, with plans to support additional mappers in the future.
 
 <img src="demos/donkey_kong.png" width="400px">
 
@@ -16,9 +16,9 @@ A cycle-accurate NES emulator written in Rust. NNES implements the 2A03 CPU and 
   - Accurate scanline and cycle timing
   - VBLANK and NMI generation
 - **iNES ROM Support**: Cartridge loading with header validation
-  - PRG-ROM and CHR-ROM parsing
+  - PRG-ROM, CHR-ROM, and CHR-RAM parsing (iNES and NES 2.0 headers)
   - Horizontal and vertical mirroring support
-  - SRAM detection
+  - Battery-backed SRAM and trainer support
 - **2A03 APU Emulation**: Cycle-accurate audio with all five channels
   - Pulse, triangle, noise, and DMC channels with nonlinear mixing
   - Frame counter with IRQ support and DMC DMA cycle stealing
@@ -98,9 +98,17 @@ nnes/
         │   ├── opcodes.rs               # Opcode definitions and tables
         │   └── bus/
         │       └── devices.rs           # Memory-mapped devices
-        └── ppu/
-            ├── core.rs                  # PPU rendering logic
-            └── io.rs                    # PPU register I/O
+        ├── ppu/
+        │   ├── core.rs                  # PPU rendering logic
+        │   ├── io.rs                    # PPU register I/O
+        │   └── sprites.rs               # Sprite evaluation and fetching
+        └── apu/
+            ├── channels.rs              # Pulse, triangle, noise channels
+            ├── dmc.rs                   # DMC channel and sample fetching
+            ├── frame.rs                 # Frame counter and IRQ
+            ├── io.rs                    # APU register I/O
+            ├── mixer.rs                 # Nonlinear mixer and resampler
+            └── units.rs                 # Envelopes, sweeps, length counters
 ```
 
 ## Emulator Design
@@ -113,18 +121,28 @@ The NES uses a master clock that drives all subsystems at different rates:
 |-----------|---------|----------------|
 | CPU | ÷12 | ~1.79 MHz |
 | PPU | ÷4 | ~5.37 MHz |
-| APU | ÷24 | ~894 kHz |
+| APU | ÷12 | ~1.79 MHz |
+
+The APU shares the CPU clock (its triangle timer and frame counter run at
+CPU rate; pulse timers divide down internally) and ticks first in each
+CPU slot, so register writes settle at the end of the cycle. The NNES
+struct also forwards cross-component signals each tick: the PPU's NMI
+line, the APU's level-triggered IRQ line, and OAM/DMC DMA transfers.
 
 ```rust
 pub fn tick(&mut self) {
-    // CPU runs at master/12
-    if self.master_clock % 12 == 0 {
-        self.cpu.borrow_mut().tick();
-    }
-
     // PPU runs at master/4
     if self.master_clock % 4 == 0 {
         self.ppu.borrow_mut().tick();
+        // ... NMI edge forwarding
+    }
+
+    // CPU and APU run at master/12
+    if self.master_clock % 12 == 0 {
+        self.apu.borrow_mut().tick();
+        // ... DMC DMA service, IRQ level
+        self.cpu.borrow_mut().tick();
+        // ... OAM DMA forwarding
     }
 
     self.master_clock = self.master_clock.wrapping_add(1);

@@ -1,11 +1,13 @@
 Crucial (immediate next steps)
-- Fix PPU for SMB
-- Implement APU
+- Implement more mappers (MMC1, MMC3, UNROM, CNROM)
 
 Important (do in parallel or in the near future)
 - Make egui debugger containing cpu/ppu/apu states
-- Implement unofficial opcodes
-- Implement more mappers
+- Save states
 
 Nice to have (perfect emulator accuracy)
 - Implement reset interrupt instead of initialization function
+- RDY-accurate mid-instruction DMC DMA stalls (+ controller read corruption)
+- Band-limited audio resampling (blip-buffer style)
+- PAL timing support
+- Zapper support
