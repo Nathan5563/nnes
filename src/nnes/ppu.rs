@@ -116,6 +116,9 @@ pub struct PPU {
     sprite_render: [SpriteRender; 8],
     sprite_count: u8,
     sprite_0_on_line: bool,
+    // OAMADDR at the start of sprite evaluation: evaluation scans OAM from
+    // this base, and the entry at the base acts as "sprite 0" for hit purposes
+    oam_addr_base: u8,
 
     // Open bus
     open_bus: u8,
@@ -166,6 +169,7 @@ impl PPU {
             sprite_render: [SpriteRender::default(); 8],
             sprite_count: 0,
             sprite_0_on_line: false,
+            oam_addr_base: 0,
             open_bus: 0,
             front: [0; 256 * 240],
             back: [0; 256 * 240],
@@ -335,6 +339,8 @@ impl PPU {
             // Sprite tile fetching (cycles 257-320)
             // All sprites are "empty" since secondary OAM is cleared
             if (257..=320).contains(&self.cycle) {
+                // OAMADDR is reset to 0 during each of these dots
+                self.oam_addr = 0;
                 self.tick_sprite_fetch();
             }
         }
@@ -359,6 +365,8 @@ impl PPU {
 
             // Cycles 257-320: Sprite tile fetching (for next scanline)
             if (257..=320).contains(&self.cycle) {
+                // OAMADDR is reset to 0 during each of these dots
+                self.oam_addr = 0;
                 self.tick_sprite_fetch();
             }
 
@@ -437,8 +445,17 @@ impl PPU {
         //   3. If 8 sprites found, set overflow flag on additional in-range sprites
         //   4. The overflow detection has a hardware bug where m also increments
 
-        let oam_idx = 4 * self.store.curr_sprite as usize
-            + self.store.curr_sprite_byte as usize;
+        // Evaluation begins at the current OAMADDR, not at OAM[0]: latch the
+        // base on the first evaluation tick. The entry at the base acts as
+        // "sprite 0" for sprite-0-hit purposes (OAMADDR misalignment quirk).
+        if self.cycle == 65 {
+            self.oam_addr_base = self.oam_addr;
+        }
+
+        let oam_idx = (self.oam_addr_base as usize
+            + 4 * self.store.curr_sprite as usize
+            + self.store.curr_sprite_byte as usize)
+            & 0xFF;
         let secondary_idx = 4 * self.store.accepted_sprite as usize
             + self.store.curr_sprite_byte as usize;
 
