@@ -183,15 +183,15 @@ impl BusDevice for Sram {
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        unimplemented!()
+        self.sram[(addr - 0x6000) as usize]
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
-        unimplemented!()
+        self.sram[(addr - 0x6000) as usize] = data;
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        unimplemented!()
+        self.sram[(addr - 0x6000) as usize]
     }
 }
 
