@@ -10,10 +10,6 @@ pub fn hi_nibble(n: u8) -> u8 {
     n >> 4
 }
 
-pub fn lo_nibble(n: u8) -> u8 {
-    n & 0xF
-}
-
 pub fn byte_from_nibbles(lo: u8, hi: u8) -> u8 {
     (hi << 4) | lo
 }
@@ -44,10 +40,6 @@ pub fn bit_7(n: u8) -> u8 {
 
 pub fn bit_6(n: u8) -> u8 {
     (n & 0b0100_0000) >> 6
-}
-
-pub fn bit_5(n: u8) -> u8 {
-    (n & 0b0010_0000) >> 5
 }
 
 pub fn bit_4(n: u8) -> u8 {

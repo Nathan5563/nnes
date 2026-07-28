@@ -302,7 +302,7 @@ impl PPU {
         match self.scanline {
             PRE_RENDER_LINE => self.tick_pre_render(rendering_enabled),
             0..=239 => self.tick_visible(rendering_enabled),
-            240 => {} // Post-render: idle
+            240 => {}       // Post-render: idle
             241..=260 => {} // VBlank: handled separately
             _ => {}
         }

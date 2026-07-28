@@ -56,7 +56,9 @@ pub fn validate_rom(rom: &Vec<u8>) -> Result<u8, String> {
 
     // Four-screen mirroring panics in the PPU
     if rom[6] & 0b1000 != 0 {
-        return Err("error: four-screen mirroring is not supported".to_string());
+        return Err(
+            "error: four-screen mirroring is not supported".to_string()
+        );
     }
 
     // Every declared section must actually be present in the file
@@ -78,7 +80,6 @@ pub struct Cartridge {
     pub sram: Vec<u8>,
     pub prg_rom: Vec<u8>,
     pub chr_rom: Vec<u8>,
-    pub mapper: u8,
 
     pub mirroring: Mirroring,
 }
@@ -137,8 +138,6 @@ impl Cartridge {
         let trainer_size = if rom[6] & 0b100 != 0 { 512 } else { 0 };
         let prg_start = 16 + trainer_size;
         let chr_start = prg_start + prg_rom_size;
-        let mapper_lo = hi_nibble(rom[6]);
-        let mapper_hi = hi_nibble(rom[7]);
 
         let sram: Vec<u8> = iter::repeat(0u8)
             .take(0x1000)
@@ -151,7 +150,6 @@ impl Cartridge {
         } else {
             rom[chr_start..chr_start + chr_rom_size].to_vec()
         };
-        let mapper = byte_from_nibbles(mapper_lo, mapper_hi);
 
         let mirroring = if bit_3(rom[6]) == 1 {
             Mirroring::ALTERNATIVE
@@ -169,7 +167,6 @@ impl Cartridge {
             sram,
             prg_rom,
             chr_rom,
-            mapper,
 
             mirroring,
         }

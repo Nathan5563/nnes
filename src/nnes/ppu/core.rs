@@ -90,8 +90,8 @@ impl PPU {
             0x3F
         };
         let emphasis = (self.ppu_mask.bits() >> 5) as u16;
-        self.back[idx] =
-            (emphasis << 6) | (self.palette[palette_addr as usize] as u16 & mask);
+        self.back[idx] = (emphasis << 6)
+            | (self.palette[palette_addr as usize] as u16 & mask);
 
         // --- Update sprite shift registers ---
         self.update_sprite_shifters();
@@ -127,8 +127,8 @@ impl PPU {
             0x3F
         };
         let emphasis = (self.ppu_mask.bits() >> 5) as u16;
-        self.back[idx] =
-            (emphasis << 6) | (self.palette[palette_addr as usize] as u16 & mask);
+        self.back[idx] = (emphasis << 6)
+            | (self.palette[palette_addr as usize] as u16 & mask);
     }
 
     pub fn fetch_nametable(&mut self) {

@@ -1,5 +1,8 @@
 use super::{BusDevice, Cartridge, PPU};
-use crate::{controller::{Controllers, Joypad}, utils::bit_7};
+use crate::{
+    controller::{Controllers, Joypad},
+    utils::bit_7,
+};
 use std::{cell::RefCell, rc::Rc};
 
 pub struct RAM {
@@ -79,8 +82,9 @@ impl BusDevice for PpuRegs {
         self.ppu.borrow_mut().reg_write(reg, data);
     }
 
-    fn peek(&self, addr: u16) -> u8 {
-        // TODO: reg_peek()? return last written byte? what is important
+    fn peek(&self, _addr: u16) -> u8 {
+        // PPU registers can't be inspected without side effects; the trace
+        // only needs to peek RAM and ROM
         0
     }
 
@@ -95,7 +99,6 @@ impl BusDevice for PpuRegs {
 
 pub struct ApuRegs {
     // apu: Rc<RefCell<APU>>,
-    apu_regs: [u8; 0x0020],
 }
 
 impl BusDevice for ApuRegs {
@@ -107,13 +110,13 @@ impl BusDevice for ApuRegs {
         addr == 0x4015
     }
 
-    fn mem_read(&mut self, addr: u16) -> u8 {
+    fn mem_read(&mut self, _addr: u16) -> u8 {
         0
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {}
+    fn mem_write(&mut self, _addr: u16, _data: u8) {}
 
-    fn peek(&self, addr: u16) -> u8 {
+    fn peek(&self, _addr: u16) -> u8 {
         0
     }
 }
@@ -173,28 +176,6 @@ impl BusDevice for Controllers {
     }
 }
 
-pub struct ExpansionRom {
-    _expansion_rom: [u8; 0x1FE0],
-}
-
-impl BusDevice for ExpansionRom {
-    fn contains(&self, addr: u16) -> bool {
-        (0x4020..0x6000).contains(&addr)
-    }
-
-    fn mem_read(&mut self, addr: u16) -> u8 {
-        unimplemented!()
-    }
-
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        unimplemented!()
-    }
-
-    fn peek(&self, addr: u16) -> u8 {
-        unimplemented!()
-    }
-}
-
 pub struct Sram {
     sram: Vec<u8>,
 }
@@ -235,7 +216,7 @@ impl BusDevice for PrgRom {
         }
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {}
+    fn mem_write(&mut self, _addr: u16, _data: u8) {}
 
     fn peek(&self, addr: u16) -> u8 {
         match self.num_banks {
@@ -264,12 +245,16 @@ pub fn memory_map(
         oam_dma_running: false,
     }));
     memory_handlers.push(Box::new(PpuRegs { ppu }));
-    memory_handlers.push(Box::new(ApuRegs {
-        apu_regs: [0; 0x0020],
-    }));
+    memory_handlers.push(Box::new(ApuRegs {}));
     memory_handlers.push(Box::new(Controllers {
-        pad1: Joypad { active: 0, state: 0 },
-        pad2: Joypad { active: 0, state: 0 },
+        pad1: Joypad {
+            active: 0,
+            state: 0,
+        },
+        pad2: Joypad {
+            active: 0,
+            state: 0,
+        },
         strobe: false,
     }));
     if cartridge.has_trainer || cartridge.has_sram {
