@@ -50,8 +50,6 @@ impl Pulse {
         }
     }
 
-    // Consumed by the mixer once sample generation lands
-    #[allow(dead_code)]
     pub fn output(&self) -> u8 {
         if !self.length.active()
             || self.sweep.muting(self.period)
@@ -128,8 +126,6 @@ impl Triangle {
         }
     }
 
-    // Consumed by the mixer once sample generation lands
-    #[allow(dead_code)]
     pub fn output(&self) -> u8 {
         TRI_SEQ[self.seq_pos as usize]
     }
@@ -173,8 +169,6 @@ impl Noise {
         }
     }
 
-    // Consumed by the mixer once sample generation lands
-    #[allow(dead_code)]
     pub fn output(&self) -> u8 {
         if self.lfsr & 1 != 0 || !self.length.active() {
             0

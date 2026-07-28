@@ -53,8 +53,6 @@ impl Envelope {
         }
     }
 
-    // Consumed by the channel output stage once the sequencers land
-    #[allow(dead_code)]
     pub fn output(&self) -> u8 {
         if self.constant {
             self.period

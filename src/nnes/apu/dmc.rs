@@ -149,7 +149,6 @@ impl DMC {
         }
     }
 
-    #[allow(dead_code)]
     pub fn output(&self) -> u8 {
         self.output_level
     }

@@ -2,11 +2,13 @@ mod channels;
 mod dmc;
 mod frame;
 mod io;
+mod mixer;
 mod units;
 
 use channels::{Noise, Pulse, Triangle};
 use dmc::DMC;
 use frame::FrameCounter;
+use mixer::Sampler;
 
 pub struct APU {
     pulse1: Pulse,
@@ -16,6 +18,7 @@ pub struct APU {
     dmc: DMC,
     frame: FrameCounter,
     cpu_cycle: u64,
+    sampler: Sampler,
 }
 
 impl APU {
@@ -29,6 +32,7 @@ impl APU {
             dmc: DMC::new(),
             frame: FrameCounter::new(),
             cpu_cycle: 0,
+            sampler: Sampler::new(),
         }
     }
 
@@ -69,6 +73,14 @@ impl APU {
         self.triangle.clock_timer();
         self.noise.clock_timer();
         self.dmc.clock_timer();
+
+        self.sampler.push(mixer::mix(
+            self.pulse1.output(),
+            self.pulse2.output(),
+            self.triangle.output(),
+            self.noise.output(),
+            self.dmc.output(),
+        ));
         self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
     }
 
@@ -91,6 +103,11 @@ impl APU {
     // Drained by the SDL frontend once audio output lands
     #[allow(dead_code)]
     pub fn take_samples(&mut self) -> Vec<f32> {
-        Vec::new()
+        std::mem::take(&mut self.sampler.buf)
+    }
+
+    #[allow(dead_code)]
+    pub fn set_rate_trim(&mut self, trim: f64) {
+        self.sampler.set_trim(trim);
     }
 }
