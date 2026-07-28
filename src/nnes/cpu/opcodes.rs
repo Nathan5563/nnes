@@ -1,5 +1,5 @@
 use super::{Flags, CPU, IRQ_VECTOR, NMI_VECTOR};
-use crate::utils::{bit_0, bit_6, bit_7, hi_byte, lo_byte};
+use crate::utils::{bit_0, bit_5, bit_6, bit_7, hi_byte, lo_byte};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum AddressingMode {
@@ -63,7 +63,7 @@ lazy_static! {
         Some(OpCode::new(0x08, "PHP".to_string(), AddressingMode::IMP, None,                CPU::php, 3, 1)),
         Some(OpCode::new(0x09, "ORA".to_string(), AddressingMode::IMM, None,                CPU::ora, 2, 2)),
         Some(OpCode::new(0x0A, "ASL".to_string(), AddressingMode::ACC, None,                CPU::asl, 2, 1)),
-        None,
+        Some(OpCode::new(0x0B, "*ANC".to_string(), AddressingMode::IMM, None, CPU::anc, 2, 2)),
         Some(OpCode::new(0x0C, "*NOP".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::nop, 4, 3)),
         Some(OpCode::new(0x0D, "ORA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ora, 4, 3)),
         Some(OpCode::new(0x0E, "ASL".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::asl, 6, 3)),
@@ -95,7 +95,7 @@ lazy_static! {
         Some(OpCode::new(0x28, "PLP".to_string(), AddressingMode::IMP, None,                CPU::plp, 4, 1)),
         Some(OpCode::new(0x29, "AND".to_string(), AddressingMode::IMM, None,                CPU::and, 2, 2)),
         Some(OpCode::new(0x2A, "ROL".to_string(), AddressingMode::ACC, None,                CPU::rol, 2, 1)),
-        None,
+        Some(OpCode::new(0x2B, "*ANC".to_string(), AddressingMode::IMM, None, CPU::anc, 2, 2)),
         Some(OpCode::new(0x2C, "BIT".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::bit, 4, 3)),
         Some(OpCode::new(0x2D, "AND".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::and, 4, 3)),
         Some(OpCode::new(0x2E, "ROL".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::rol, 6, 3)),
@@ -127,7 +127,7 @@ lazy_static! {
         Some(OpCode::new(0x48, "PHA".to_string(), AddressingMode::IMP, None,                CPU::pha, 3, 1)),
         Some(OpCode::new(0x49, "EOR".to_string(), AddressingMode::IMM, None,                CPU::eor, 2, 2)),
         Some(OpCode::new(0x4A, "LSR".to_string(), AddressingMode::ACC, None,                CPU::lsr, 2, 1)),
-        None,
+        Some(OpCode::new(0x4B, "*ALR".to_string(), AddressingMode::IMM, None, CPU::alr, 2, 2)),
         Some(OpCode::new(0x4C, "JMP".to_string(), AddressingMode::ABS, None,                CPU::jmp, 3, 3)),
         Some(OpCode::new(0x4D, "EOR".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::eor, 4, 3)),
         Some(OpCode::new(0x4E, "LSR".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::lsr, 6, 3)),
@@ -159,7 +159,7 @@ lazy_static! {
         Some(OpCode::new(0x68, "PLA".to_string(), AddressingMode::IMP, None,                CPU::pla, 4, 1)),
         Some(OpCode::new(0x69, "ADC".to_string(), AddressingMode::IMM, None,                CPU::adc, 2, 2)),
         Some(OpCode::new(0x6A, "ROR".to_string(), AddressingMode::ACC, None,                CPU::ror, 2, 1)),
-        None,
+        Some(OpCode::new(0x6B, "*ARR".to_string(), AddressingMode::IMM, None, CPU::arr, 2, 2)),
         Some(OpCode::new(0x6C, "JMP".to_string(), AddressingMode::IND, None,                CPU::jmp, 5, 3)),  // Indirect bug
         Some(OpCode::new(0x6D, "ADC".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::adc, 4, 3)),
         Some(OpCode::new(0x6E, "ROR".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ror, 6, 3)),
@@ -191,7 +191,7 @@ lazy_static! {
         Some(OpCode::new(0x88, "DEY".to_string(), AddressingMode::IMP, None,                CPU::dey, 2, 1)),
         Some(OpCode::new(0x89, "*NOP".to_string(), AddressingMode::IMM, None, CPU::nop, 2, 2)),
         Some(OpCode::new(0x8A, "TXA".to_string(), AddressingMode::IMP, None,                CPU::txa, 2, 1)),
-        None,
+        Some(OpCode::new(0x8B, "*ANE".to_string(), AddressingMode::IMM, None, CPU::ane, 2, 2)),
         Some(OpCode::new(0x8C, "STY".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sty, 4, 3)),
         Some(OpCode::new(0x8D, "STA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sta, 4, 3)),
         Some(OpCode::new(0x8E, "STX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::stx, 4, 3)),
@@ -199,7 +199,7 @@ lazy_static! {
         Some(OpCode::new(0x90, "BCC".to_string(), AddressingMode::REL, None,                CPU::bcc, 2, 2)),
         Some(OpCode::new(0x91, "STA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sta, 5, 2)),
         None,
-        None,
+        Some(OpCode::new(0x93, "*SHA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sha, 6, 2)),
         Some(OpCode::new(0x94, "STY".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sty, 4, 2)),
         Some(OpCode::new(0x95, "STA".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sta, 4, 2)),
         Some(OpCode::new(0x96, "STX".to_string(), AddressingMode::ZPY, Some(CPU::addr_zpy), CPU::stx, 4, 2)),
@@ -207,11 +207,11 @@ lazy_static! {
         Some(OpCode::new(0x98, "TYA".to_string(), AddressingMode::IMP, None,                CPU::tya, 2, 1)),
         Some(OpCode::new(0x99, "STA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::sta, 5, 3)),
         Some(OpCode::new(0x9A, "TXS".to_string(), AddressingMode::IMP, None,                CPU::txs, 2, 1)),
-        None,
-        None,
+        Some(OpCode::new(0x9B, "*TAS".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::tas, 5, 3)),
+        Some(OpCode::new(0x9C, "*SHY".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::shy, 5, 3)),
         Some(OpCode::new(0x9D, "STA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::sta, 5, 3)),
-        None,
-        None,
+        Some(OpCode::new(0x9E, "*SHX".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::shx, 5, 3)),
+        Some(OpCode::new(0x9F, "*SHA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::sha, 5, 3)),
         Some(OpCode::new(0xA0, "LDY".to_string(), AddressingMode::IMM, None,                CPU::ldy, 2, 2)),
         Some(OpCode::new(0xA1, "LDA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::lda, 6, 2)),
         Some(OpCode::new(0xA2, "LDX".to_string(), AddressingMode::IMM, None,                CPU::ldx, 2, 2)),
@@ -223,7 +223,7 @@ lazy_static! {
         Some(OpCode::new(0xA8, "TAY".to_string(), AddressingMode::IMP, None,                CPU::tay, 2, 1)),
         Some(OpCode::new(0xA9, "LDA".to_string(), AddressingMode::IMM, None,                CPU::lda, 2, 2)),
         Some(OpCode::new(0xAA, "TAX".to_string(), AddressingMode::IMP, None,                CPU::tax, 2, 1)),
-        None,
+        Some(OpCode::new(0xAB, "*LXA".to_string(), AddressingMode::IMM, None, CPU::lxa, 2, 2)),
         Some(OpCode::new(0xAC, "LDY".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ldy, 4, 3)),
         Some(OpCode::new(0xAD, "LDA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::lda, 4, 3)),
         Some(OpCode::new(0xAE, "LDX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::ldx, 4, 3)),
@@ -239,7 +239,7 @@ lazy_static! {
         Some(OpCode::new(0xB8, "CLV".to_string(), AddressingMode::IMP, None,                CPU::clv, 2, 1)),
         Some(OpCode::new(0xB9, "LDA".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::lda, 4, 3)),
         Some(OpCode::new(0xBA, "TSX".to_string(), AddressingMode::IMP, None,                CPU::tsx, 2, 1)),
-        None,
+        Some(OpCode::new(0xBB, "*LAS".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::las, 4, 3)),
         Some(OpCode::new(0xBC, "LDY".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::ldy, 4, 3)),
         Some(OpCode::new(0xBD, "LDA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::lda, 4, 3)),
         Some(OpCode::new(0xBE, "LDX".to_string(), AddressingMode::ABY, Some(CPU::addr_aby), CPU::ldx, 4, 3)),
@@ -255,7 +255,7 @@ lazy_static! {
         Some(OpCode::new(0xC8, "INY".to_string(), AddressingMode::IMP, None,                CPU::iny, 2, 1)),
         Some(OpCode::new(0xC9, "CMP".to_string(), AddressingMode::IMM, None,                CPU::cmp, 2, 2)),
         Some(OpCode::new(0xCA, "DEX".to_string(), AddressingMode::IMP, None,                CPU::dex, 2, 1)),
-        None,
+        Some(OpCode::new(0xCB, "*SBX".to_string(), AddressingMode::IMM, None, CPU::sbx, 2, 2)),
         Some(OpCode::new(0xCC, "CPY".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::cpy, 4, 3)),
         Some(OpCode::new(0xCD, "CMP".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::cmp, 4, 3)),
         Some(OpCode::new(0xCE, "DEC".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::dec, 6, 3)),
@@ -399,6 +399,7 @@ impl CPU {
                         | 0x7F
                         | 0xDF
                         | 0xFF
+                        | 0x9C
                 );
                 // Write instructions already count the dummy read cycle
                 if self.page_crossed && !write_ins {
@@ -435,7 +436,15 @@ impl CPU {
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = matches!(
                     self.ins.unwrap().code,
-                    0x99 | 0x1B | 0x3B | 0x5B | 0x7B | 0xDB | 0xFB
+                    0x99 | 0x1B
+                        | 0x3B
+                        | 0x5B
+                        | 0x7B
+                        | 0xDB
+                        | 0xFB
+                        | 0x9B
+                        | 0x9E
+                        | 0x9F
                 );
                 // Write instructions already count the dummy read cycle
                 if self.page_crossed && !write_ins {
@@ -503,7 +512,7 @@ impl CPU {
                 self.page_crossed = self.store.data > self.store.lo;
                 let write_ins = matches!(
                     self.ins.unwrap().code,
-                    0x91 | 0x13 | 0x33 | 0x53 | 0x73 | 0xD3 | 0xF3
+                    0x91 | 0x13 | 0x33 | 0x53 | 0x73 | 0xD3 | 0xF3 | 0x93
                 );
                 if self.page_crossed || write_ins {
                     self.required_ins_ticks += 1;
@@ -1068,6 +1077,107 @@ impl CPU {
                 cpu.set_nz(cpu.a);
             },
         )
+    }
+
+
+    fn anc(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a &= self.store.data;
+        self.set_nz(self.a);
+        self.p.set(Flags::CARRY, bit_7(self.a) != 0);
+        true
+    }
+
+    fn alr(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        self.a &= self.store.data;
+        self.a = self.shift_data(false, false, false, self.a);
+        self.set_nz(self.a);
+        true
+    }
+
+    fn arr(&mut self, _subcycle: u8) -> bool {
+        // AND, then ROR through carry; C comes from bit 6 of the result and
+        // V from bit 6 XOR bit 5
+        self.store.data = self.get_operand();
+        let cf = self.p.contains(Flags::CARRY);
+        self.a = ((self.a & self.store.data) >> 1) | ((cf as u8) << 7);
+        self.set_nz(self.a);
+        self.p.set(Flags::CARRY, bit_6(self.a) != 0);
+        self.p
+            .set(Flags::OVERFLOW, bit_6(self.a) != bit_5(self.a));
+        true
+    }
+
+    fn ane(&mut self, _subcycle: u8) -> bool {
+        // Unstable: the real result depends on a chip- and temperature-
+        // dependent constant; $EE is the widely accepted model
+        self.store.data = self.get_operand();
+        self.a = (self.a | 0xEE) & self.x & self.store.data;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn lxa(&mut self, _subcycle: u8) -> bool {
+        // Unstable: modeled with the constant $FF, so A = X = operand
+        self.store.data = self.get_operand();
+        self.a = self.store.data;
+        self.x = self.store.data;
+        self.set_nz(self.a);
+        true
+    }
+
+    fn sbx(&mut self, _subcycle: u8) -> bool {
+        // X = (A & X) - operand without borrow-in; C is set like CMP
+        self.store.data = self.get_operand();
+        let t = self.a & self.x;
+        self.p.set(Flags::CARRY, t >= self.store.data);
+        self.x = t.wrapping_sub(self.store.data);
+        self.set_nz(self.x);
+        true
+    }
+
+    fn las(&mut self, _subcycle: u8) -> bool {
+        self.store.data = self.get_operand();
+        let value = self.store.data & self.sp;
+        self.a = value;
+        self.x = value;
+        self.sp = value;
+        self.set_nz(value);
+        true
+    }
+
+    fn sh_write(&mut self, reg: u8) {
+        // The stored value is the register ANDed with (high byte of the
+        // pre-index address + 1); when the index crosses a page, the
+        // corrupted value also replaces the high byte of the target
+        let value = reg & self.store.hi.wrapping_add(1);
+        if self.page_crossed {
+            self.store.addr =
+                ((value as u16) << 8) | (self.store.addr & 0x00FF);
+        }
+        self.bus.mem_write(self.store.addr, value);
+    }
+
+    fn sha(&mut self, _subcycle: u8) -> bool {
+        self.sh_write(self.a & self.x);
+        true
+    }
+
+    fn shx(&mut self, _subcycle: u8) -> bool {
+        self.sh_write(self.x);
+        true
+    }
+
+    fn shy(&mut self, _subcycle: u8) -> bool {
+        self.sh_write(self.y);
+        true
+    }
+
+    fn tas(&mut self, _subcycle: u8) -> bool {
+        self.sp = self.a & self.x;
+        self.sh_write(self.a & self.x);
+        true
     }
 
     fn lax(&mut self, _subcycle: u8) -> bool {
