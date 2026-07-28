@@ -369,6 +369,11 @@ impl PPU {
                 self.oam_addr = 0;
                 self.tick_sprite_fetch();
             }
+
+            // Cycles 321-340 and 0: the OAM bus shows secondary OAM byte 0
+            if self.cycle == 0 || (321..=340).contains(&self.cycle) {
+                self.oam_bus = self.secondary_oam[0];
+            }
         }
     }
 
@@ -395,6 +400,11 @@ impl PPU {
                 // OAMADDR is reset to 0 during each of these dots
                 self.oam_addr = 0;
                 self.tick_sprite_fetch();
+            }
+
+            // Cycles 321-340 and 0: the OAM bus shows secondary OAM byte 0
+            if self.cycle == 0 || (321..=340).contains(&self.cycle) {
+                self.oam_bus = self.secondary_oam[0];
             }
 
             // Cycles 1-256: Render pixels
