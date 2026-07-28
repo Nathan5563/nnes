@@ -499,6 +499,15 @@ impl PPU {
                 && self.scanline < y + self.store.sprite_height as u16;
 
             if in_range {
+                // Overflow: with 8 sprites already accepted, the flag is set
+                // the moment the 9th in-range Y coordinate is found, before
+                // the byte walk over the remaining 3 bytes continues
+                if self.store.accepted_sprite >= 8
+                    && self.store.curr_sprite_byte == 0
+                {
+                    self.ppu_status.insert(PPUSTATUS::SPRITE_OVERFLOW);
+                }
+
                 // Sprite is visible on next scanline - copy remaining bytes
                 let (next_byte, next_state) = match self.store.curr_sprite_byte
                 {
@@ -519,10 +528,7 @@ impl PPU {
                         self.store.sprite_eval_state = SpriteEvalState::Done;
                     }
 
-                    if self.store.accepted_sprite >= 8 {
-                        // Overflow: more than 8 sprites on this line
-                        self.ppu_status.insert(PPUSTATUS::SPRITE_OVERFLOW);
-                    } else {
+                    if self.store.accepted_sprite < 8 {
                         // Track sprite 0 presence (curr_sprite just incremented to 1)
                         if self.store.curr_sprite == 1
                             && self.store.accepted_sprite == 0
