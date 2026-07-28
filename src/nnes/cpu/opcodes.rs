@@ -197,7 +197,7 @@ lazy_static! {
         Some(OpCode::new(0x8E, "STX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::stx, 4, 3)),
         Some(OpCode::new(0x8F, "*SAX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sax, 4, 3)),
         Some(OpCode::new(0x90, "BCC".to_string(), AddressingMode::REL, None,                CPU::bcc, 2, 2)),
-        Some(OpCode::new(0x91, "STA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sta, 5, 2)),
+        Some(OpCode::new(0x91, "STA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sta, 6, 2)),
         Some(OpCode::new(0x92, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x93, "*SHA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sha, 6, 2)),
         Some(OpCode::new(0x94, "STY".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sty, 4, 2)),
@@ -514,7 +514,8 @@ impl CPU {
                     self.ins.unwrap().code,
                     0x91 | 0x13 | 0x33 | 0x53 | 0x73 | 0xD3 | 0xF3 | 0x93
                 );
-                if self.page_crossed || write_ins {
+                // Write instructions already count the dummy read cycle
+                if self.page_crossed && !write_ins {
                     self.required_ins_ticks += 1;
                 }
                 !(self.page_crossed || write_ins)
