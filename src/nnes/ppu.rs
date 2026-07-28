@@ -95,6 +95,7 @@ pub struct PPU {
     w: u8,  // 1 bit
     f: u8,  // 1 bit
     chr_rom: Vec<u8>,
+    chr_is_ram: bool,
     vram: [u8; 0x800],
     palette: [u8; 0x20],
     // Sprites are 4 bytes each:
@@ -153,6 +154,7 @@ impl PPU {
             w: 0,
             f: 0,
             chr_rom: cartridge.chr_rom.clone(),
+            chr_is_ram: cartridge.has_chr_ram,
             vram: [0; 0x800],
             palette: [0; 0x20],
             oam: [0; 64 * 4],
@@ -232,7 +234,9 @@ impl PPU {
         addr &= 0x3FFF;
         match addr {
             PATTERN_TABLE_START..=PATTERN_TABLE_END => {
-                self.chr_rom[addr as usize] = data
+                if self.chr_is_ram {
+                    self.chr_rom[addr as usize] = data;
+                }
             }
             NAMETABLE_START..=NAMETABLE_END => {
                 addr = self.get_vram_addr(addr);

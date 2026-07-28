@@ -39,6 +39,7 @@ pub fn validate_rom(rom: &Vec<u8>) -> Result<u8, String> {
 pub struct Cartridge {
     pub has_trainer: bool,
     pub has_sram: bool,
+    pub has_chr_ram: bool,
 
     pub sram: Vec<u8>,
     pub prg_rom: Vec<u8>,
@@ -96,6 +97,7 @@ impl Cartridge {
         */
 
         let prg_rom_size = 0x4000 * usize::max(1, rom[4] as usize);
+        let has_chr_ram = rom[5] == 0;
         let chr_rom_size = 0x2000 * usize::max(1, rom[5] as usize);
         let sram_size = 0x2000;
         let trainer_size = if rom[6] & 0b100 != 0 { 512 } else { 0 };
@@ -110,7 +112,11 @@ impl Cartridge {
             .chain(iter::repeat(0u8).take(sram_size - 0x1000 - trainer_size))
             .collect();
         let prg_rom = rom[prg_start..prg_start + prg_rom_size].to_vec();
-        let chr_rom = rom[chr_start..chr_start + chr_rom_size].to_vec();
+        let chr_rom = if has_chr_ram {
+            vec![0u8; 0x2000]
+        } else {
+            rom[chr_start..chr_start + chr_rom_size].to_vec()
+        };
         let mapper = byte_from_nibbles(mapper_lo, mapper_hi);
 
         let mirroring = if bit_3(rom[6]) == 1 {
@@ -124,6 +130,7 @@ impl Cartridge {
         Cartridge {
             has_trainer: trainer_size != 0,
             has_sram: bit_1(rom[6]) != 0,
+            has_chr_ram,
 
             sram,
             prg_rom,
