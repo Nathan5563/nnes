@@ -100,13 +100,10 @@ impl APU {
         self.dmc.load(data);
     }
 
-    // Drained by the SDL frontend once audio output lands
-    #[allow(dead_code)]
     pub fn take_samples(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.sampler.buf)
     }
 
-    #[allow(dead_code)]
     pub fn set_rate_trim(&mut self, trim: f64) {
         self.sampler.set_trim(trim);
     }

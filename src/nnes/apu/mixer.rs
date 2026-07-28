@@ -55,7 +55,6 @@ impl Sampler {
 
     // Small rate adjustment used by the frontend to keep its audio queue
     // depth in band without resampling
-    #[allow(dead_code)]
     pub fn set_trim(&mut self, trim: f64) {
         self.trim = trim;
     }

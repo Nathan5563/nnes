@@ -13,8 +13,8 @@ use cartridge::{validate_rom, Cartridge};
 use nnes::NNES;
 pub use palette::NES_PALETTE;
 use sdl2::{
-    keyboard::Keycode, pixels::PixelFormatEnum, render::Canvas, video::Window,
-    Sdl,
+    audio::AudioSpecDesired, keyboard::Keycode, pixels::PixelFormatEnum,
+    render::Canvas, video::Window, Sdl,
 };
 use std::{
     env,
@@ -81,6 +81,29 @@ fn main() -> Result<(), String> {
 
     let mut nnes = init_emu();
 
+    // Audio is strictly optional: without a device the emulator runs silent
+    let audio = sdl.audio().ok();
+    let queue = audio.as_ref().and_then(|a| {
+        a.open_queue::<f32, _>(
+            None,
+            &AudioSpecDesired {
+                freq: Some(44_100),
+                channels: Some(1),
+                samples: Some(1024),
+            },
+        )
+        .ok()
+    });
+    const FRAME_SAMPLES: u32 = 735; // 44100 Hz / ~60 fps
+    const FRAME_BYTES: u32 = FRAME_SAMPLES * 4;
+    if let Some(q) = &queue {
+        // Prime one frame of silence for latency headroom
+        let _ = q.queue_audio(&[0.0f32; FRAME_SAMPLES as usize]);
+        q.resume();
+    } else {
+        eprintln!("warning: no audio device, running silent");
+    }
+
     // NES CPU runs ~1.7898 MHz, frame rate ~60.1 Hz: ~29780 CPU ticks/frame.
     // Tick CPU once per 12 master cycles: 29780 * 12 = ~357360 master cycles per frame.
     let master_cycles_per_frame = 357360;
@@ -103,7 +126,25 @@ fn main() -> Result<(), String> {
             nnes.tick();
         }
 
-        // 2) Map ppu.front (palette index + emphasis bits) -> raw RGB bytes
+        // 2) Queue this frame's audio, nudging the sample rate slightly
+        //    to hold the queue depth between one and three frames
+        let samples = nnes.apu.borrow_mut().take_samples();
+        if let Some(q) = &queue {
+            let size = q.size();
+            if size <= 4 * FRAME_BYTES {
+                let _ = q.queue_audio(&samples);
+            }
+            let trim = if size < FRAME_BYTES {
+                -0.005
+            } else if size > 3 * FRAME_BYTES {
+                0.005
+            } else {
+                0.0
+            };
+            nnes.apu.borrow_mut().set_rate_trim(trim);
+        }
+
+        // 3) Map ppu.front (palette index + emphasis bits) -> raw RGB bytes
         texture.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
             for (i, &px) in nnes.ppu.borrow_mut().front.iter().enumerate() {
                 let (mut r, mut g, mut b) = NES_PALETTE[(px & 0x3F) as usize];
@@ -128,12 +169,12 @@ fn main() -> Result<(), String> {
             }
         })?;
 
-        // 3) Blit and present
+        // 4) Blit and present
         canvas.clear();
         canvas.copy(&texture, None, None)?;
         canvas.present();
 
-        // 4) Handle input
+        // 5) Handle input
         for event in event_pump.poll_iter() {
             if let sdl2::event::Event::KeyDown {
                 keycode: Some(Keycode::Escape),
@@ -144,7 +185,7 @@ fn main() -> Result<(), String> {
             }
         }
 
-        // 5) Clamp to 60fps
+        // 6) Clamp to 60fps
         let frame_time = frame_start.elapsed();
         if frame_time < target_frame_duration {
             sleep(target_frame_duration - frame_time);

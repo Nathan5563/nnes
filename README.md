@@ -19,6 +19,10 @@ A cycle-accurate NES emulator written in Rust. NNES implements the 2A03 CPU and 
   - PRG-ROM and CHR-ROM parsing
   - Horizontal and vertical mirroring support
   - SRAM detection
+- **2A03 APU Emulation**: Cycle-accurate audio with all five channels
+  - Pulse, triangle, noise, and DMC channels with nonlinear mixing
+  - Frame counter with IRQ support and DMC DMA cycle stealing
+  - 44.1 kHz audio output through SDL
 - **Controller Input**: Keyboard-mapped NES controller emulation
 - **Custom Palette Support**: Loadable .pal palette files
 
@@ -88,7 +92,7 @@ nnes/
     └── nnes/
         ├── cpu.rs                       # 6502 CPU core
         ├── ppu.rs                       # 2C02 PPU core
-        ├── apu.rs                       # APU (in development)
+        ├── apu.rs                       # 2A03 APU core
         ├── cpu/
         │   ├── bus.rs                   # CPU memory bus
         │   ├── opcodes.rs               # Opcode definitions and tables
@@ -172,7 +176,7 @@ Sprite evaluation occurs during visible scanlines, with up to 8 sprites per scan
 - [x] Interrupt handling (NMI, IRQ, BRK)
 - [x] PPU background rendering
 - [x] PPU sprite rendering
-- [ ] APU audio emulation
+- [x] APU audio emulation
 - [x] Unofficial CPU opcodes
 - [ ] Additional mappers (MMC1, MMC3, etc.)
 - [ ] Save states
