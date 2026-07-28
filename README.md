@@ -58,10 +58,10 @@ The executable is output to `target/release/nnes`.
 | D-Pad Down | S | Down Arrow |
 | D-Pad Left | A | Left Arrow |
 | D-Pad Right | D | Right Arrow |
-| A | J | . |
-| B | K | , |
-| Start | I | Enter |
-| Select | U | Right Shift |
+| A | G | . |
+| B | F | , |
+| Start | Space | Enter |
+| Select | Left Shift | Right Shift |
 
 ## Architecture
 

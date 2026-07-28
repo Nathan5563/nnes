@@ -28,16 +28,16 @@ impl Controllers {
         if keystate.is_scancode_pressed(Scancode::W) {
             self.pad1.active |= 0b0000_1000;
         }
-        if keystate.is_scancode_pressed(Scancode::I) {
+        if keystate.is_scancode_pressed(Scancode::Space) {
             self.pad1.active |= 0b0001_0000; // Start
         }
-        if keystate.is_scancode_pressed(Scancode::U) {
+        if keystate.is_scancode_pressed(Scancode::LShift) {
             self.pad1.active |= 0b0010_0000; // Select
         }
-        if keystate.is_scancode_pressed(Scancode::K) {
+        if keystate.is_scancode_pressed(Scancode::F) {
             self.pad1.active |= 0b0100_0000; // B
         }
-        if keystate.is_scancode_pressed(Scancode::J) {
+        if keystate.is_scancode_pressed(Scancode::G) {
             self.pad1.active |= 0b1000_0000; // A
         }
 
