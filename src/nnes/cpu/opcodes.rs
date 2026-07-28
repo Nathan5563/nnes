@@ -54,7 +54,7 @@ lazy_static! {
     pub static ref opcodes_list: [Option<OpCode>; 256] = [
         Some(OpCode::new(0x00, "BRK".to_string(), AddressingMode::IMM, None,                CPU::brk, 7, 2)),
         Some(OpCode::new(0x01, "ORA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::ora, 6, 2)),
-        None,
+        Some(OpCode::new(0x02, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x03, "*SLO".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::slo, 8, 2)),
         Some(OpCode::new(0x04, "*NOP".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::nop, 3, 2)),
         Some(OpCode::new(0x05, "ORA".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::ora, 3, 2)),
@@ -70,7 +70,7 @@ lazy_static! {
         Some(OpCode::new(0x0F, "*SLO".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::slo, 6, 3)),
         Some(OpCode::new(0x10, "BPL".to_string(), AddressingMode::REL, None,                CPU::bpl, 2, 2)),
         Some(OpCode::new(0x11, "ORA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::ora, 5, 2)),
-        None,
+        Some(OpCode::new(0x12, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x13, "*SLO".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::slo, 8, 2)),
         Some(OpCode::new(0x14, "*NOP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::nop, 4, 2)),
         Some(OpCode::new(0x15, "ORA".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::ora, 4, 2)),
@@ -86,7 +86,7 @@ lazy_static! {
         Some(OpCode::new(0x1F, "*SLO".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::slo, 7, 3)),
         Some(OpCode::new(0x20, "JSR".to_string(), AddressingMode::ABS, None,                CPU::jsr, 6, 3)),
         Some(OpCode::new(0x21, "AND".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::and, 6, 2)),
-        None,
+        Some(OpCode::new(0x22, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x23, "*RLA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::rla, 8, 2)),
         Some(OpCode::new(0x24, "BIT".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::bit, 3, 2)),
         Some(OpCode::new(0x25, "AND".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::and, 3, 2)),
@@ -102,7 +102,7 @@ lazy_static! {
         Some(OpCode::new(0x2F, "*RLA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::rla, 6, 3)),
         Some(OpCode::new(0x30, "BMI".to_string(), AddressingMode::REL, None,                CPU::bmi, 2, 2)),
         Some(OpCode::new(0x31, "AND".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::and, 5, 2)),
-        None,
+        Some(OpCode::new(0x32, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x33, "*RLA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::rla, 8, 2)),
         Some(OpCode::new(0x34, "*NOP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::nop, 4, 2)),
         Some(OpCode::new(0x35, "AND".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::and, 4, 2)),
@@ -118,7 +118,7 @@ lazy_static! {
         Some(OpCode::new(0x3F, "*RLA".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::rla, 7, 3)),
         Some(OpCode::new(0x40, "RTI".to_string(), AddressingMode::IMP, None,                CPU::rti, 6, 1)),
         Some(OpCode::new(0x41, "EOR".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::eor, 6, 2)),
-        None,
+        Some(OpCode::new(0x42, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x43, "*SRE".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::sre, 8, 2)),
         Some(OpCode::new(0x44, "*NOP".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::nop, 3, 2)),
         Some(OpCode::new(0x45, "EOR".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::eor, 3, 2)),
@@ -134,7 +134,7 @@ lazy_static! {
         Some(OpCode::new(0x4F, "*SRE".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sre, 6, 3)),
         Some(OpCode::new(0x50, "BVC".to_string(), AddressingMode::REL, None,                CPU::bvc, 2, 2)),
         Some(OpCode::new(0x51, "EOR".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::eor, 5, 2)),
-        None,
+        Some(OpCode::new(0x52, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x53, "*SRE".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sre, 8, 2)),
         Some(OpCode::new(0x54, "*NOP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::nop, 4, 2)),
         Some(OpCode::new(0x55, "EOR".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::eor, 4, 2)),
@@ -150,7 +150,7 @@ lazy_static! {
         Some(OpCode::new(0x5F, "*SRE".to_string(), AddressingMode::ABX, Some(CPU::addr_abx), CPU::sre, 7, 3)),
         Some(OpCode::new(0x60, "RTS".to_string(), AddressingMode::IMP, None,                CPU::rts, 6, 1)),
         Some(OpCode::new(0x61, "ADC".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::adc, 6, 2)),
-        None,
+        Some(OpCode::new(0x62, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x63, "*RRA".to_string(), AddressingMode::INX, Some(CPU::addr_inx), CPU::rra, 8, 2)),
         Some(OpCode::new(0x64, "*NOP".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::nop, 3, 2)),
         Some(OpCode::new(0x65, "ADC".to_string(), AddressingMode::ZPG, Some(CPU::addr_zpg), CPU::adc, 3, 2)),
@@ -166,7 +166,7 @@ lazy_static! {
         Some(OpCode::new(0x6F, "*RRA".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::rra, 6, 3)),
         Some(OpCode::new(0x70, "BVS".to_string(), AddressingMode::REL, None,                CPU::bvs, 2, 2)),
         Some(OpCode::new(0x71, "ADC".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::adc, 5, 2)),
-        None,
+        Some(OpCode::new(0x72, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x73, "*RRA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::rra, 8, 2)),
         Some(OpCode::new(0x74, "*NOP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::nop, 4, 2)),
         Some(OpCode::new(0x75, "ADC".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::adc, 4, 2)),
@@ -198,7 +198,7 @@ lazy_static! {
         Some(OpCode::new(0x8F, "*SAX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::sax, 4, 3)),
         Some(OpCode::new(0x90, "BCC".to_string(), AddressingMode::REL, None,                CPU::bcc, 2, 2)),
         Some(OpCode::new(0x91, "STA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sta, 5, 2)),
-        None,
+        Some(OpCode::new(0x92, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0x93, "*SHA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sha, 6, 2)),
         Some(OpCode::new(0x94, "STY".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sty, 4, 2)),
         Some(OpCode::new(0x95, "STA".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sta, 4, 2)),
@@ -230,7 +230,7 @@ lazy_static! {
         Some(OpCode::new(0xAF, "*LAX".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::lax, 4, 3)),
         Some(OpCode::new(0xB0, "BCS".to_string(), AddressingMode::REL, None,                CPU::bcs, 2, 2)),
         Some(OpCode::new(0xB1, "LDA".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::lda, 5, 2)),
-        None,
+        Some(OpCode::new(0xB2, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0xB3, "*LAX".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::lax, 5, 2)),
         Some(OpCode::new(0xB4, "LDY".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::ldy, 4, 2)),
         Some(OpCode::new(0xB5, "LDA".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::lda, 4, 2)),
@@ -262,7 +262,7 @@ lazy_static! {
         Some(OpCode::new(0xCF, "*DCP".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::dcp, 6, 3)),
         Some(OpCode::new(0xD0, "BNE".to_string(), AddressingMode::REL, None,                CPU::bne, 2, 2)),
         Some(OpCode::new(0xD1, "CMP".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::cmp, 5, 2)),
-        None,
+        Some(OpCode::new(0xD2, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0xD3, "*DCP".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::dcp, 8, 2)),
         Some(OpCode::new(0xD4, "*NOP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::nop, 4, 2)),
         Some(OpCode::new(0xD5, "CMP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::cmp, 4, 2)),
@@ -294,7 +294,7 @@ lazy_static! {
         Some(OpCode::new(0xEF, "*ISB".to_string(), AddressingMode::ABS, Some(CPU::addr_abs), CPU::isb, 6, 3)),
         Some(OpCode::new(0xF0, "BEQ".to_string(), AddressingMode::REL, None,                CPU::beq, 2, 2)),
         Some(OpCode::new(0xF1, "SBC".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::sbc, 5, 2)),
-        None,
+        Some(OpCode::new(0xF2, "*JAM".to_string(), AddressingMode::IMP, None, CPU::jam, 2, 1)),
         Some(OpCode::new(0xF3, "*ISB".to_string(), AddressingMode::INY, Some(CPU::addr_iny), CPU::isb, 8, 2)),
         Some(OpCode::new(0xF4, "*NOP".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::nop, 4, 2)),
         Some(OpCode::new(0xF5, "SBC".to_string(), AddressingMode::ZPX, Some(CPU::addr_zpx), CPU::sbc, 4, 2)),
@@ -1079,6 +1079,14 @@ impl CPU {
         )
     }
 
+
+
+    fn jam(&mut self, _subcycle: u8) -> bool {
+        // JAM wedges the CPU: nothing executes and no interrupt is serviced
+        // until reset
+        self.jammed = true;
+        true
+    }
 
     fn anc(&mut self, _subcycle: u8) -> bool {
         self.store.data = self.get_operand();

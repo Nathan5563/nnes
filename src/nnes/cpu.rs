@@ -68,6 +68,7 @@ pub struct CPU {
     servicing_interrupt: bool,
     hijacked: bool,
     suppress_poll: bool,
+    jammed: bool,
     page_crossed: bool,
     total_ticks: u64,
 }
@@ -121,12 +122,14 @@ impl CPU {
             servicing_interrupt: true,
             hijacked: false,
             suppress_poll: false,
+            jammed: false,
             page_crossed: false,
             total_ticks: 0,
         }
     }
 
     pub fn reset(&mut self) {
+        self.jammed = false;
         self.servicing_interrupt = false;
         self.store.lo = self.bus.mem_read(RESET_VECTOR);
         self.store.hi = self.bus.mem_read(RESET_VECTOR + 1);
@@ -159,7 +162,7 @@ impl CPU {
             self.ins = Some(opcode);
             self.required_ins_ticks = self.ins.unwrap().cycles;
         } else {
-            unimplemented!();
+            unreachable!();
         }
 
         if self.ins.unwrap().code == 0x00 {
@@ -169,6 +172,12 @@ impl CPU {
     }
 
     pub fn tick(&mut self) {
+        // A JAM opcode has wedged the CPU; only reset recovers
+        if self.jammed {
+            self.total_ticks += 1;
+            return;
+        }
+
         if self.bus.oam_dma_pending() {
             // OAM DMA trigger: DMA transfer from CPU memory page to PPU OAM.
             self.store.oam_dma_page = (self.bus.peek(0x4014) as u16) << 8;
