@@ -44,6 +44,10 @@ pub fn validate_rom(rom: &Vec<u8>) -> Result<u8, String> {
     if nes2 && rom[8] & 0x0F != 0 {
         return Err("error: unsupported mapper".to_string());
     }
+    // NES 2.0 byte 9 extends the PRG/CHR sizes past what NROM can hold
+    if nes2 && rom[9] != 0 {
+        return Err("error: unsupported ROM size".to_string());
+    }
 
     // NROM has 16 or 32 kB of PRG ROM
     if rom[4] == 0 || rom[4] > 2 {
