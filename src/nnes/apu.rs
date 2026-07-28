@@ -60,6 +60,14 @@ impl APU {
             self.triangle.clock_half();
             self.noise.clock_half();
         }
+        // Pulse timers run at APU rate (every other CPU cycle); the rest
+        // run at CPU rate with CPU-cycle period tables
+        if self.cpu_cycle & 1 == 1 {
+            self.pulse1.clock_timer();
+            self.pulse2.clock_timer();
+        }
+        self.triangle.clock_timer();
+        self.noise.clock_timer();
         self.dmc.clock_timer();
         self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
     }

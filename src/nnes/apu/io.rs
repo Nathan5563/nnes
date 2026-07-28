@@ -5,6 +5,7 @@ impl APU {
     pub fn reg_write(&mut self, addr: u16, data: u8) {
         match addr {
             0x4000 => {
+                self.pulse1.duty = data >> 6;
                 self.pulse1.envelope.write(data);
                 self.pulse1.length.halt = data & 0b0010_0000 != 0;
             }
@@ -18,8 +19,10 @@ impl APU {
                     | ((data as u16 & 0b111) << 8);
                 self.pulse1.length.load(data >> 3);
                 self.pulse1.envelope.restart();
+                self.pulse1.seq_pos = 0;
             }
             0x4004 => {
+                self.pulse2.duty = data >> 6;
                 self.pulse2.envelope.write(data);
                 self.pulse2.length.halt = data & 0b0010_0000 != 0;
             }
@@ -33,6 +36,7 @@ impl APU {
                     | ((data as u16 & 0b111) << 8);
                 self.pulse2.length.load(data >> 3);
                 self.pulse2.envelope.restart();
+                self.pulse2.seq_pos = 0;
             }
             0x4008 => {
                 self.triangle.control = data & 0b1000_0000 != 0;
