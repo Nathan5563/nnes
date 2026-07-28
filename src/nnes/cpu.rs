@@ -67,6 +67,7 @@ pub struct CPU {
     irq_pending: bool,
     servicing_interrupt: bool,
     hijacked: bool,
+    suppress_poll: bool,
     page_crossed: bool,
     total_ticks: u64,
 }
@@ -119,6 +120,7 @@ impl CPU {
             irq_pending: false,
             servicing_interrupt: true,
             hijacked: false,
+            suppress_poll: false,
             page_crossed: false,
             total_ticks: 0,
         }
@@ -149,6 +151,7 @@ impl CPU {
     }
 
     fn fetch(&mut self) {
+        self.suppress_poll = false;
         self.store.data = self.bus.mem_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
 
@@ -303,6 +306,11 @@ impl CPU {
     }
 
     fn poll_interrupts(&mut self) {
+        // Taken branches poll before their 2nd cycle but not their 3rd
+        if self.suppress_poll {
+            self.suppress_poll = false;
+            return;
+        }
         // Poll for interrupts if the second to last cycle has ended
         if self.required_ins_ticks - self.curr_ins_ticks as u8 == 2 {
             self.servicing_interrupt = if self.nmi_pending {

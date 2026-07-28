@@ -389,7 +389,8 @@ impl CPU {
                     0x9D | 0x1E | 0x3E | 0x5E | 0x7E | 0xDE | 0xFE => true,
                     _ => false,
                 };
-                if self.page_crossed || write_ins {
+                // Write instructions already count the dummy read cycle
+                if self.page_crossed && !write_ins {
                     self.required_ins_ticks += 1;
                 }
                 !(self.page_crossed || write_ins)
@@ -425,7 +426,8 @@ impl CPU {
                     0x99 => true,
                     _ => false,
                 };
-                if self.page_crossed || write_ins {
+                // Write instructions already count the dummy read cycle
+                if self.page_crossed && !write_ins {
                     self.required_ins_ticks += 1;
                 }
                 !(self.page_crossed || write_ins)
@@ -1207,6 +1209,7 @@ impl CPU {
                 self.store.offset = self.get_operand() as i8;
                 if jmp {
                     self.required_ins_ticks += 1;
+                    self.suppress_poll = true;
                 }
                 !jmp
             }
