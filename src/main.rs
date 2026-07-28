@@ -109,14 +109,15 @@ fn main() -> Result<(), String> {
                 let (mut r, mut g, mut b) = NES_PALETTE[(px & 0x3F) as usize];
                 let e = (px >> 6) & 0b111;
                 if e != 0 {
-                    // Attenuate every channel whose emphasis bit is not set
-                    if e & 0b001 == 0 {
+                    // Attenuate every channel whose emphasis bit is not
+                    // set; setting all three bits attenuates everything
+                    if e & 0b001 == 0 || e == 0b111 {
                         r = (r as u16 * 189 / 256) as u8;
                     }
-                    if e & 0b010 == 0 {
+                    if e & 0b010 == 0 || e == 0b111 {
                         g = (g as u16 * 189 / 256) as u8;
                     }
-                    if e & 0b100 == 0 {
+                    if e & 0b100 == 0 || e == 0b111 {
                         b = (b as u16 * 189 / 256) as u8;
                     }
                 }
