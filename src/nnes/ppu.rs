@@ -318,12 +318,12 @@ impl PPU {
             self.reset_sprite_state();
         }
 
-        // Cycles 1-64: Clear secondary OAM to $FF (happens always)
-        if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
-            self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
-        }
-
         if rendering_enabled {
+            // Cycles 1-64: Clear secondary OAM to $FF
+            if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
+                self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
+            }
+
             // Cycles 280-304: Repeatedly copy vertical scroll from t to v
             if (280..=304).contains(&self.cycle) {
                 self.copy_y();
@@ -346,22 +346,22 @@ impl PPU {
             self.reset_sprite_state();
         }
 
-        // Cycles 1-64: Clear secondary OAM (even if rendering disabled)
-        if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
-            self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
-        }
-
-        // Cycles 65-256: Sprite evaluation (for next scanline)
-        if (65..=256).contains(&self.cycle) {
-            self.tick_sprite_evaluation();
-        }
-
-        // Cycles 257-320: Sprite tile fetching (for next scanline)
-        if (257..=320).contains(&self.cycle) {
-            self.tick_sprite_fetch();
-        }
-
         if rendering_enabled {
+            // Cycles 1-64: Clear secondary OAM
+            if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
+                self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
+            }
+
+            // Cycles 65-256: Sprite evaluation (for next scanline)
+            if (65..=256).contains(&self.cycle) {
+                self.tick_sprite_evaluation();
+            }
+
+            // Cycles 257-320: Sprite tile fetching (for next scanline)
+            if (257..=320).contains(&self.cycle) {
+                self.tick_sprite_fetch();
+            }
+
             // Cycles 1-256: Render pixels
             if VISIBLE_CYCLES.contains(&self.cycle) {
                 self.draw_pixel();
