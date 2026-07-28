@@ -437,6 +437,11 @@ impl PPU {
         } else if self.cycle == 257 {
             // Copy horizontal scroll from t to v
             self.copy_x();
+        } else if self.cycle == 337 || self.cycle == 339 {
+            // Dummy nametable fetches at the end of the scanline; the fetched
+            // byte is overwritten by the next real fetch, but hardware issues
+            // these reads (MMC5 counts them to clock its scanline counter)
+            self.fetch_nametable();
         }
     }
 
