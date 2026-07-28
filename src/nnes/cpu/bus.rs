@@ -85,7 +85,12 @@ impl Bus {
     pub fn peek(&self, addr: u16) -> u8 {
         for handler in &self.memory_handlers {
             if handler.contains(addr) {
-                return handler.peek(addr);
+                let mut v = handler.peek(addr);
+                if addr == 0x4015 {
+                    // Match mem_read: $4015 bit 5 is open bus
+                    v |= self.open_bus & 0x20;
+                }
+                return v;
             }
         }
         self.open_bus

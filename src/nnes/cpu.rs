@@ -507,7 +507,7 @@ impl CPU {
                     lo_byte(self.store.addr.wrapping_add(1)),
                     hi_byte(self.store.addr),
                 ]);
-                self.store.hi = self.bus.mem_read(self.store.addr);
+                self.store.hi = self.bus.peek(self.store.addr);
                 self.store.addr =
                     u16::from_le_bytes([self.store.lo, self.store.hi]);
                 asm.push_str(format!("= {:04X}", self.store.addr).as_str());
