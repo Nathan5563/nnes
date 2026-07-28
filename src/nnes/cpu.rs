@@ -533,6 +533,11 @@ impl CPU {
             buf.push_str("       ");
         }
 
+        // Unofficial opcodes are marked with a leading '*', which takes the
+        // place of the last padding space so the columns stay aligned
+        if asm.starts_with('*') {
+            buf.pop();
+        }
         buf.push_str(asm.as_str());
 
         let mut ppu_cycle = 0;
