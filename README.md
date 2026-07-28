@@ -6,7 +6,7 @@ A cycle-accurate NES emulator written in Rust. NNES implements the full 2A03 CPU
 
 ## Features
 
-- **Cycle-Accurate 6502 CPU**: Complete implementation of all official and unofficial opcodes with per-cycle timing
+- **6502 CPU Emulation**: Complete implementation of all official and unofficial opcodes with per-cycle timing
   - Finite state machine architecture (Fetch → Decode → Execute)
   - All addressing modes with correct cycle counts
   - Proper interrupt handling (NMI, IRQ, BRK) with interrupt hijacking
@@ -15,14 +15,14 @@ A cycle-accurate NES emulator written in Rust. NNES implements the full 2A03 CPU
   - Sprite evaluation and OAM DMA transfer
   - Accurate scanline and cycle timing
   - VBLANK and NMI generation
-- **iNES ROM Support**: Cartridge loading with header validation
-  - PRG-ROM, CHR-ROM, and CHR-RAM parsing (iNES and NES 2.0 headers)
-  - Horizontal and vertical mirroring support
-  - Battery-backed SRAM and trainer support
 - **2A03 APU Emulation**: Cycle-accurate audio with all five channels
   - Pulse, triangle, noise, and DMC channels with nonlinear mixing
   - Frame counter with IRQ support and DMC DMA cycle stealing
   - 44.1 kHz audio output through SDL
+- **iNES ROM Support**: Cartridge loading with header validation
+  - PRG-ROM, CHR-ROM, and CHR-RAM parsing (iNES and NES 2.0 headers)
+  - Horizontal and vertical mirroring support
+  - Battery-backed SRAM and trainer support
 - **Controller Input**: Keyboard-mapped NES controller emulation
 - **Custom Palette Support**: Loadable .pal palette files
 
