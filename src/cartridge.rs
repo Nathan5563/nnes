@@ -10,9 +10,13 @@ pub enum Mirroring {
 
 const NES_MAGIC: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 
-// Currently only supports iNES file format, mapper 0.
-// Validation is not rigorous yet, so be careful with rom selection.
+// Currently only supports mapper 0 (iNES, archaic iNES, or NES 2.0 headers).
 pub fn validate_rom(rom: &Vec<u8>) -> Result<u8, String> {
+    // The header alone is 16 bytes
+    if rom.len() < 16 {
+        return Err("error: file too small".to_string());
+    }
+
     // No magic number
     for i in 0..4 {
         if rom[i] != NES_MAGIC[i] {
@@ -20,17 +24,43 @@ pub fn validate_rom(rom: &Vec<u8>) -> Result<u8, String> {
         }
     }
 
-    // Not iNES file format
-    if rom[7] & 0xc != 0 {
+    // Header variant: 0b10 in bits [3,2] of byte 7 marks NES 2.0, 0b01 marks
+    // archaic iNES; both are loadable for mapper 0. Reject only 0b11.
+    let nes2 = rom[7] & 0x0C == 0x08;
+    let archaic = rom[7] & 0x0C == 0x04;
+    if rom[7] & 0x0C == 0x0C {
         return Err("error: unsupported file format".to_string());
     }
 
-    // Not mapper 0
+    // Not mapper 0. Archaic iNES headers have garbage in byte 7, so the
+    // mapper high nibble is only meaningful in the other variants; NES 2.0
+    // additionally stores mapper bits [11,8] in the low nibble of byte 8.
     let lo = hi_nibble(rom[6]);
-    let hi = hi_nibble(rom[7]);
+    let hi = if archaic { 0 } else { hi_nibble(rom[7]) };
     let mapper = byte_from_nibbles(lo, hi);
     if mapper != 0 {
         return Err("error: unsupported mapper".to_string());
+    }
+    if nes2 && rom[8] & 0x0F != 0 {
+        return Err("error: unsupported mapper".to_string());
+    }
+
+    // NROM has 16 or 32 kB of PRG ROM
+    if rom[4] == 0 || rom[4] > 2 {
+        return Err("error: unsupported PRG ROM size".to_string());
+    }
+
+    // Four-screen mirroring panics in the PPU
+    if rom[6] & 0b1000 != 0 {
+        return Err("error: four-screen mirroring is not supported".to_string());
+    }
+
+    // Every declared section must actually be present in the file
+    let trainer = if rom[6] & 0b100 != 0 { 512 } else { 0 };
+    let prg = rom[4] as usize * 16384;
+    let chr = rom[5] as usize * 8192; // 0 means CHR RAM, contributes no data
+    if rom.len() < 16 + trainer + prg + chr {
+        return Err("error: file truncated".to_string());
     }
 
     Ok(0)
