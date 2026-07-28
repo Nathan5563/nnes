@@ -1124,22 +1124,14 @@ impl CPU {
     fn add(&mut self, n: u8, mut m: u8, subtract: bool) -> u8 {
         let cbit = self.p.contains(Flags::CARRY) as u8;
 
-        let mut res;
         if subtract {
             m = !m;
-            res = n as u16 + m as u16 + cbit as u16;
-            if (res as i8) < 0 {
-                self.p.remove(Flags::CARRY);
-            } else {
-                self.p.insert(Flags::CARRY);
-            }
+        }
+        let mut res = n as u16 + m as u16 + cbit as u16;
+        if res > 0xff {
+            self.p.insert(Flags::CARRY);
         } else {
-            res = n as u16 + m as u16 + cbit as u16;
-            if res > 0xff {
-                self.p.insert(Flags::CARRY);
-            } else {
-                self.p.remove(Flags::CARRY);
-            }
+            self.p.remove(Flags::CARRY);
         }
 
         res &= 0xFF;
