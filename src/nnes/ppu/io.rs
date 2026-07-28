@@ -161,6 +161,14 @@ impl PPU {
     }
 
     pub fn reg_write(&mut self, reg: u8, data: u8) {
+        // Writes to PPUCTRL, PPUMASK, PPUSCROLL, and PPUADDR are ignored for
+        // ~29658 CPU clocks (88974 PPU dots) after power/reset, but they
+        // still drive the PPU data bus
+        if self.total_cycles < 88974 && matches!(reg, 0 | 1 | 5 | 6) {
+            self.open_bus = data;
+            return;
+        }
+
         match reg {
             0 => self.write_ppu_ctrl(data),
             1 => self.write_ppu_mask(data),
