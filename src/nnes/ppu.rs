@@ -546,7 +546,8 @@ impl PPU {
                 // the moment the 9th in-range Y coordinate is found, before
                 // the byte walk over the remaining 3 bytes continues
                 if self.store.accepted_sprite >= 8
-                    && self.store.curr_sprite_byte == 0
+                    && self.store.sprite_eval_state
+                        == SpriteEvalState::YCoordinate
                 {
                     self.ppu_status.insert(PPUSTATUS::SPRITE_OVERFLOW);
                 }
