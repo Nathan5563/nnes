@@ -84,6 +84,9 @@ impl DMC {
             }
         } else {
             self.bytes_remaining = 0;
+            // Drop any fetch not yet serviced, so it can't land after the
+            // channel was silenced (or after a console reset)
+            self.request = None;
         }
     }
 

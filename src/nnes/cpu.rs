@@ -347,7 +347,8 @@ impl CPU {
     }
 
     pub fn begin_dmc_stall(&mut self) {
-        self.stall_cycles += 4;
+        // Saturate: a jammed CPU never drains stalls, but fetches continue
+        self.stall_cycles = self.stall_cycles.saturating_add(4);
     }
 
     // The IRQ line is level-triggered: devices hold it asserted until
