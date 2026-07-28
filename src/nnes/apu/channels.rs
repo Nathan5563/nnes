@@ -157,10 +157,11 @@ impl Noise {
         }
     }
 
-    // Clocked every CPU cycle (the period table is in CPU cycles)
+    // Clocked every CPU cycle; the table stores the exact interval, so
+    // the reload is one less than the period
     pub fn clock_timer(&mut self) {
         if self.timer == 0 {
-            self.timer = self.period;
+            self.timer = self.period - 1;
             let tap = if self.mode { 6 } else { 1 };
             let feedback = (self.lfsr ^ (self.lfsr >> tap)) & 1;
             self.lfsr = (self.lfsr >> 1) | (feedback << 14);
