@@ -435,13 +435,15 @@ impl PPU {
         //   3. If 8 sprites found, set overflow flag on additional in-range sprites
         //   4. The overflow detection has a hardware bug where m also increments
 
-        let oam_idx = (4 * self.store.curr_sprite
-            + self.store.curr_sprite_byte) as usize;
-        let secondary_idx = (4 * self.store.accepted_sprite
-            + self.store.curr_sprite_byte)
-            as usize;
+        let oam_idx = 4 * self.store.curr_sprite as usize
+            + self.store.curr_sprite_byte as usize;
+        let secondary_idx = 4 * self.store.accepted_sprite as usize
+            + self.store.curr_sprite_byte as usize;
 
         if self.cycle % 2 == 1 {
+            if self.store.sprite_eval_state == SpriteEvalState::Done {
+                return;
+            }
             // Odd cycle: Read from primary OAM
             let data = self.oam[oam_idx];
             match self.store.sprite_eval_state {
@@ -499,7 +501,7 @@ impl PPU {
                 if self.store.curr_sprite_byte == 0 {
                     self.store.curr_sprite =
                         self.store.curr_sprite.wrapping_add(1);
-                    if self.store.curr_sprite == 0 {
+                    if self.store.curr_sprite == 64 {
                         self.store.sprite_eval_state = SpriteEvalState::Done;
                     }
 
@@ -520,7 +522,7 @@ impl PPU {
                 // Sprite not in range - move to next sprite
                 self.store.curr_sprite =
                     self.store.curr_sprite.wrapping_add(1);
-                if self.store.curr_sprite == 0 {
+                if self.store.curr_sprite == 64 {
                     self.store.sprite_eval_state = SpriteEvalState::Done;
                 }
 
