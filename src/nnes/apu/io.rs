@@ -61,11 +61,18 @@ impl APU {
                 self.noise.length.load(data >> 3);
                 self.noise.envelope.restart();
             }
+            0x4010 => self.dmc.write_ctrl(data),
+            0x4011 => self.dmc.write_load(data),
+            0x4012 => self.dmc.write_address(data),
+            0x4013 => self.dmc.write_length(data),
             0x4015 => {
                 self.pulse1.length.set_enabled(data & 0b0001 != 0);
                 self.pulse2.length.set_enabled(data & 0b0010 != 0);
                 self.triangle.length.set_enabled(data & 0b0100 != 0);
                 self.noise.length.set_enabled(data & 0b1000 != 0);
+                self.dmc.set_enabled(data & 0b1_0000 != 0);
+                // Writing $4015 always acknowledges the DMC interrupt
+                self.dmc.irq_flag = false;
             }
             0x4017 => {
                 self.frame.write(data, self.cpu_cycle % 2 == 1);
@@ -111,8 +118,14 @@ impl APU {
         if self.noise.length.active() {
             data |= 0b1000;
         }
+        if self.dmc.bytes_remaining > 0 {
+            data |= 0b0001_0000;
+        }
         if self.frame.irq_flag {
             data |= 0b0100_0000;
+        }
+        if self.dmc.irq_flag {
+            data |= 0b1000_0000;
         }
         data
     }

@@ -1,9 +1,11 @@
 mod channels;
+mod dmc;
 mod frame;
 mod io;
 mod units;
 
 use channels::{Noise, Pulse, Triangle};
+use dmc::DMC;
 use frame::FrameCounter;
 
 pub struct APU {
@@ -11,6 +13,7 @@ pub struct APU {
     pulse2: Pulse,
     triangle: Triangle,
     noise: Noise,
+    dmc: DMC,
     frame: FrameCounter,
     cpu_cycle: u64,
 }
@@ -23,6 +26,7 @@ impl APU {
             pulse2: Pulse::new(false),
             triangle: Triangle::new(),
             noise: Noise::new(),
+            dmc: DMC::new(),
             frame: FrameCounter::new(),
             cpu_cycle: 0,
         }
@@ -35,6 +39,8 @@ impl APU {
         self.pulse2.length.set_enabled(false);
         self.triangle.length.set_enabled(false);
         self.noise.length.set_enabled(false);
+        self.dmc.set_enabled(false);
+        self.dmc.irq_flag = false;
         self.frame.reset();
     }
 
@@ -54,22 +60,25 @@ impl APU {
             self.triangle.clock_half();
             self.noise.clock_half();
         }
+        self.dmc.clock_timer();
         self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
     }
 
     // Level of the IRQ line: held while the frame or DMC interrupt flag
     // is set
     pub fn irq_line(&self) -> bool {
-        self.frame.irq_flag
+        self.frame.irq_flag || self.dmc.irq_flag
     }
 
     // DMC sample fetches are serviced by the NNES struct, which owns
     // access to the CPU bus
     pub fn take_dmc_request(&mut self) -> Option<u16> {
-        None
+        self.dmc.request.take()
     }
 
-    pub fn dmc_load(&mut self, _data: u8) {}
+    pub fn dmc_load(&mut self, data: u8) {
+        self.dmc.load(data);
+    }
 
     // Drained by the SDL frontend once audio output lands
     #[allow(dead_code)]
