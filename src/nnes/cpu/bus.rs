@@ -1,6 +1,6 @@
 mod devices;
 
-use super::super::{Cartridge, PPU};
+use super::super::{Cartridge, APU, PPU};
 use crate::controller::Controllers;
 use devices::memory_map;
 use std::{cell::RefCell, rc::Rc};
@@ -37,9 +37,13 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn new(ppu: Rc<RefCell<PPU>>, cartridge: &Cartridge) -> Self {
+    pub fn new(
+        ppu: Rc<RefCell<PPU>>,
+        apu: Rc<RefCell<APU>>,
+        cartridge: &Cartridge,
+    ) -> Self {
         let mut memory_handlers: Vec<Box<dyn BusDevice>> = Vec::new();
-        memory_map(ppu, cartridge, &mut memory_handlers);
+        memory_map(ppu, apu, cartridge, &mut memory_handlers);
         Bus {
             memory_handlers,
             open_bus: 0,
@@ -47,13 +51,17 @@ impl Bus {
     }
 
     pub fn mem_read(&mut self, addr: u16) -> u8 {
-        // $4014 is write-only; reads return open bus
-        if addr == 0x4014 {
+        // $4000-$4014 are write-only; reads return open bus
+        if (0x4000..=0x4014).contains(&addr) {
             return self.open_bus;
         }
         for handler in &mut self.memory_handlers {
             if handler.contains(addr) {
-                let v = handler.mem_read(addr);
+                let mut v = handler.mem_read(addr);
+                if addr == 0x4015 {
+                    // $4015 bit 5 is open bus
+                    v |= self.open_bus & 0x20;
+                }
                 self.open_bus = v;
                 return v;
             }
@@ -62,11 +70,12 @@ impl Bus {
     }
 
     pub fn mem_write(&mut self, addr: u16, data: u8) {
-        // Every CPU write drives the data bus, whether or not a device
-        // claims the address
         self.open_bus = data;
+        // $4017 reads are controller 2, but writes go to the APU frame
+        // counter, which shares a handler with the other APU registers
+        let route = if addr == 0x4017 { 0x4015 } else { addr };
         for handler in &mut self.memory_handlers {
-            if handler.contains(addr) {
+            if handler.contains(route) {
                 handler.mem_write(addr, data);
                 return;
             }

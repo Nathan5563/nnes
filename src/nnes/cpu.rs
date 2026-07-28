@@ -69,6 +69,7 @@ pub struct CPU {
     hijacked: bool,
     suppress_poll: bool,
     jammed: bool,
+    stall_cycles: u8,
     page_crossed: bool,
     total_ticks: u64,
 }
@@ -123,6 +124,7 @@ impl CPU {
             hijacked: false,
             suppress_poll: false,
             jammed: false,
+            stall_cycles: 0,
             page_crossed: false,
             total_ticks: 0,
         }
@@ -130,6 +132,7 @@ impl CPU {
 
     pub fn reset(&mut self) {
         self.jammed = false;
+        self.stall_cycles = 0;
         self.state = CPUState::Fetch;
         self.ins = None;
         self.curr_ins_ticks = 0;
@@ -182,6 +185,13 @@ impl CPU {
     pub fn tick(&mut self) {
         // A JAM opcode has wedged the CPU; only reset recovers
         if self.jammed {
+            self.total_ticks += 1;
+            return;
+        }
+
+        // DMC DMA steals cycles from the CPU while it fetches sample bytes
+        if self.stall_cycles > 0 {
+            self.stall_cycles -= 1;
             self.total_ticks += 1;
             return;
         }
@@ -334,6 +344,16 @@ impl CPU {
                 || (self.irq_pending
                     && !self.p.intersects(Flags::INTERRUPT_DISABLE));
         }
+    }
+
+    pub fn begin_dmc_stall(&mut self) {
+        self.stall_cycles += 4;
+    }
+
+    // The IRQ line is level-triggered: devices hold it asserted until
+    // acknowledged, and the level is resampled every CPU cycle
+    pub fn set_irq_level(&mut self, level: bool) {
+        self.irq_pending = level;
     }
 
     pub fn suppress_nmi(&mut self) {

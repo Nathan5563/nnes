@@ -1,4 +1,4 @@
-use super::{BusDevice, Cartridge, PPU};
+use super::{BusDevice, Cartridge, APU, PPU};
 use crate::{
     controller::{Controllers, Joypad},
     utils::bit_7,
@@ -104,26 +104,27 @@ impl BusDevice for PpuRegs {
 }
 
 pub struct ApuRegs {
-    // apu: Rc<RefCell<APU>>,
+    apu: Rc<RefCell<APU>>,
 }
 
 impl BusDevice for ApuRegs {
     fn contains(&self, addr: u16) -> bool {
-        // Only $4015 (APU status) is readable; $4000-$4013 are write-only and
-        // $4018-$4019 are disabled test registers, so reads of those must
-        // fall through to the bus's open-bus fallback. Writes to unclaimed
-        // APU registers are ignored, which is fine without an APU.
-        addr == 0x4015
+        // The bus short-circuits reads of the write-only $4000-$4014 to
+        // open bus and routes $4017 writes here, so reads only ever arrive
+        // for $4015
+        (0x4000..=0x4013).contains(&addr) || addr == 0x4015
     }
 
-    fn mem_read(&mut self, _addr: u16) -> u8 {
-        0
+    fn mem_read(&mut self, addr: u16) -> u8 {
+        self.apu.borrow_mut().reg_read(addr)
     }
 
-    fn mem_write(&mut self, _addr: u16, _data: u8) {}
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.apu.borrow_mut().reg_write(addr, data);
+    }
 
-    fn peek(&self, _addr: u16) -> u8 {
-        0
+    fn peek(&self, addr: u16) -> u8 {
+        self.apu.borrow().peek(addr)
     }
 }
 
@@ -243,6 +244,7 @@ impl BusDevice for PrgRom {
  */
 pub fn memory_map(
     ppu: Rc<RefCell<PPU>>,
+    apu: Rc<RefCell<APU>>,
     cartridge: &Cartridge,
     memory_handlers: &mut Vec<Box<dyn BusDevice>>,
 ) {
@@ -251,7 +253,7 @@ pub fn memory_map(
         oam_dma_running: false,
     }));
     memory_handlers.push(Box::new(PpuRegs { ppu }));
-    memory_handlers.push(Box::new(ApuRegs {}));
+    memory_handlers.push(Box::new(ApuRegs { apu }));
     memory_handlers.push(Box::new(Controllers {
         pad1: Joypad {
             active: 0,

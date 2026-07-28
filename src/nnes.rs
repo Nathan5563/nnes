@@ -1,9 +1,11 @@
+mod apu;
 mod cpu;
 mod ppu;
 
 use std::{cell::RefCell, rc::Rc};
 
 use super::Cartridge;
+use apu::APU;
 use cpu::{bus::Bus, CPU};
 use ppu::PPU;
 
@@ -11,26 +13,27 @@ pub struct NNES {
     pub master_clock: u64,
     pub cpu: Rc<RefCell<CPU>>,
     pub ppu: Rc<RefCell<PPU>>,
-    // pub apu: Rc<RefCell<APU>>,
+    pub apu: Rc<RefCell<APU>>,
 }
 
 impl NNES {
     pub fn new(cartridge: Cartridge) -> Self {
         let ppu = Rc::new(RefCell::new(PPU::new(&cartridge)));
-        let bus = Bus::new(ppu.clone(), &cartridge);
+        let apu = Rc::new(RefCell::new(APU::new()));
+        let bus = Bus::new(ppu.clone(), apu.clone(), &cartridge);
         let cpu = Rc::new(RefCell::new(CPU::new(bus)));
-        // let apu = APU::new();
 
         NNES {
             master_clock: 0,
             cpu,
             ppu,
-            // apu,
+            apu,
         }
     }
 
     pub fn reset(&mut self) {
         self.ppu.borrow_mut().reset();
+        self.apu.borrow_mut().reset();
         self.cpu.borrow_mut().reset();
     }
 
@@ -46,12 +49,26 @@ impl NNES {
             }
         }
 
-        // CPU runs at master/12
+        // CPU runs at master/12; the APU shares the CPU clock (its triangle
+        // timer and frame counter run at CPU rate) and ticks first, so that
+        // register writes made by the CPU settle at the end of the cycle
         if self.master_clock % 12 == 0 {
             // if self.cpu.borrow_mut().ins.is_none() {
             //     self.cpu.borrow_mut().trace();
             // }
             let mut cpu_ref = self.cpu.borrow_mut();
+            {
+                let mut apu_ref = self.apu.borrow_mut();
+                apu_ref.tick();
+                // The APU can't reach the CPU bus, so DMC sample fetches
+                // are serviced here, mirroring the OAM DMA forwarding
+                if let Some(addr) = apu_ref.take_dmc_request() {
+                    let data = cpu_ref.bus.mem_read(addr);
+                    apu_ref.dmc_load(data);
+                    cpu_ref.begin_dmc_stall();
+                }
+                cpu_ref.set_irq_level(apu_ref.irq_line());
+            }
             cpu_ref.tick();
             if cpu_ref.store.oam_dma_data < 0x100 {
                 self.ppu
@@ -65,11 +82,6 @@ impl NNES {
                 cpu_ref.suppress_nmi();
             }
         }
-
-        // // APU runs at master/24
-        // if self.master_clock % 24 == 0 {
-        //     self.apu.borrow_mut().tick();
-        // }
 
         self.master_clock = self.master_clock.wrapping_add(1);
     }
