@@ -323,11 +323,6 @@ impl PPU {
             self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
         }
 
-        // Cycles 65-256: Sprite evaluation for scanline 0
-        if (65..=256).contains(&self.cycle) {
-            self.tick_sprite_evaluation();
-        }
-
         if rendering_enabled {
             // Cycles 280-304: Repeatedly copy vertical scroll from t to v
             if (280..=304).contains(&self.cycle) {
@@ -477,16 +472,11 @@ impl PPU {
                 };
             }
 
-            // Check if sprite is in range (for next scanline)
-            // During pre-render (261), next scanline is 0
-            let next_scanline = if self.scanline == PRE_RENDER_LINE {
-                0
-            } else {
-                self.scanline + 1
-            };
+            // Check if sprite is in range: Y is compared against the current
+            // scanline, and the fetched sprite is rendered on the next one
             let y = self.store.y_coordinate as u16;
-            let in_range = next_scanline >= y
-                && next_scanline < y + self.store.sprite_height as u16;
+            let in_range = self.scanline >= y
+                && self.scanline < y + self.store.sprite_height as u16;
 
             if in_range {
                 // Sprite is visible on next scanline - copy remaining bytes
@@ -603,17 +593,12 @@ impl PPU {
         let flip_v = (attr & 0x80) != 0;
         let flip_h = (attr & 0x40) != 0;
 
-        // Calculate row within sprite (for next scanline)
-        // During pre-render (261), next scanline is 0
-        let next_scanline = if self.scanline == PRE_RENDER_LINE {
-            0
-        } else {
-            self.scanline + 1
-        };
+        // Row within the sprite: fetches on scanline N target scanline N+1,
+        // and row 0 of a sprite with coordinate Y lands on scanline Y+1
         let row = if is_empty {
             0
         } else {
-            let raw_row = next_scanline.wrapping_sub(y as u16) as u8;
+            let raw_row = self.scanline.wrapping_sub(y as u16) as u8;
             if self.store.sprite_height == 16 {
                 if flip_v {
                     15 - raw_row
