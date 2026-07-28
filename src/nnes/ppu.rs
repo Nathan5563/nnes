@@ -118,6 +118,9 @@ pub struct PPU {
     sprite_render: [SpriteRender; 8],
     sprite_count: u8,
     sprite_0_on_line: bool,
+    // Last byte the sprite pipeline placed on the internal OAM bus; exposed
+    // by OAMDATA reads while rendering
+    oam_bus: u8,
     // OAMADDR at the start of sprite evaluation: evaluation scans OAM from
     // this base, and the entry at the base acts as "sprite 0" for hit purposes
     oam_addr_base: u8,
@@ -171,6 +174,7 @@ impl PPU {
             sprite_render: [SpriteRender::default(); 8],
             sprite_count: 0,
             sprite_0_on_line: false,
+            oam_bus: 0,
             oam_addr_base: 0,
             open_bus: 0,
             front: [0; 256 * 240],
@@ -329,6 +333,7 @@ impl PPU {
             // Cycles 1-64: Clear secondary OAM to $FF
             if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
                 self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
+                self.oam_bus = 0xFF;
             }
 
             // Cycles 280-304: Repeatedly copy vertical scroll from t to v
@@ -359,6 +364,7 @@ impl PPU {
             // Cycles 1-64: Clear secondary OAM
             if (1..=64).contains(&self.cycle) && (self.cycle - 1) % 2 == 0 {
                 self.secondary_oam[((self.cycle - 1) / 2) as usize] = 0xFF;
+                self.oam_bus = 0xFF;
             }
 
             // Cycles 65-256: Sprite evaluation (for next scanline)
@@ -472,6 +478,7 @@ impl PPU {
             }
             // Odd cycle: Read from primary OAM
             let data = self.oam[oam_idx];
+            self.oam_bus = data;
             match self.store.sprite_eval_state {
                 SpriteEvalState::YCoordinate => self.store.y_coordinate = data,
                 SpriteEvalState::TileNumber => self.store.tile_number = data,
@@ -591,6 +598,7 @@ impl PPU {
                 } else {
                     self.secondary_oam[secondary_idx]
                 };
+                self.oam_bus = self.store.y_coordinate;
             }
             1 => {
                 self.store.tile_number = if is_empty {
@@ -598,6 +606,7 @@ impl PPU {
                 } else {
                     self.secondary_oam[secondary_idx + 1]
                 };
+                self.oam_bus = self.store.tile_number;
             }
             2 => {
                 // Garbage nametable fetch (bus activity only)
@@ -608,6 +617,7 @@ impl PPU {
                 } else {
                     self.secondary_oam[secondary_idx + 2]
                 };
+                self.oam_bus = self.store.attributes;
             }
             3 => {
                 self.store.x_coordinate = if is_empty {
@@ -615,6 +625,7 @@ impl PPU {
                 } else {
                     self.secondary_oam[secondary_idx + 3]
                 };
+                self.oam_bus = self.store.x_coordinate;
             }
             5 => {
                 // Compute the pattern address and fetch the low plane

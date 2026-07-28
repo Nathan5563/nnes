@@ -1,4 +1,4 @@
-use super::{PPU, PPUCTRL, PPUMASK, PPUSTATUS};
+use super::{PPU, PPUCTRL, PPUMASK, PPUSTATUS, PRE_RENDER_LINE};
 use crate::utils::{bit_0, bit_1, bit_2, bit_3, bit_4, byte_from_bits};
 
 impl PPU {
@@ -52,6 +52,17 @@ impl PPU {
 
     // 0x2004: OAMDATA - R
     fn read_oam_data(&mut self) -> u8 {
+        let rendering = self
+            .ppu_mask
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES);
+        if rendering
+            && (self.scanline < 240 || self.scanline == PRE_RENDER_LINE)
+        {
+            // While rendering, reads expose whatever the sprite pipeline is
+            // currently accessing on the internal OAM bus (raw, unmasked)
+            return self.oam_bus;
+        }
+
         let mut data = self.oam[self.oam_addr as usize];
         if (self.oam_addr & 0b11) == 0b10 {
             data &= 0b11100011;
@@ -61,6 +72,18 @@ impl PPU {
 
     // 0x2004: OAMDATA - W
     fn write_oam_data(&mut self, data: u8) {
+        let rendering = self
+            .ppu_mask
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES);
+        if rendering
+            && (self.scanline < 240 || self.scanline == PRE_RENDER_LINE)
+        {
+            // While rendering, writes don't reach OAM; they glitchily bump
+            // the high 6 bits of OAMADDR instead
+            self.oam_addr = self.oam_addr.wrapping_add(4);
+            return;
+        }
+
         self.oam[self.oam_addr as usize] = data;
         self.oam_addr = self.oam_addr.wrapping_add(1);
     }
