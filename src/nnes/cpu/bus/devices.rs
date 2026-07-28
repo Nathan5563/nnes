@@ -100,7 +100,11 @@ pub struct ApuRegs {
 
 impl BusDevice for ApuRegs {
     fn contains(&self, addr: u16) -> bool {
-        (0x4000..=0x4015).contains(&addr) || (0x4018..=0x4019).contains(&addr)
+        // Only $4015 (APU status) is readable; $4000-$4013 are write-only and
+        // $4018-$4019 are disabled test registers, so reads of those must
+        // fall through to the bus's open-bus fallback. Writes to unclaimed
+        // APU registers are ignored, which is fine without an APU.
+        addr == 0x4015
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {

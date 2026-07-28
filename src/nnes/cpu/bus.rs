@@ -62,10 +62,12 @@ impl Bus {
     }
 
     pub fn mem_write(&mut self, addr: u16, data: u8) {
+        // Every CPU write drives the data bus, whether or not a device
+        // claims the address
+        self.open_bus = data;
         for handler in &mut self.memory_handlers {
             if handler.contains(addr) {
                 handler.mem_write(addr, data);
-                self.open_bus = data;
                 return;
             }
         }
