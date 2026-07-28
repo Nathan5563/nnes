@@ -1,5 +1,5 @@
 use super::{BusDevice, Cartridge, PPU};
-use crate::{controller::Joypad, utils::bit_7};
+use crate::{controller::{Controllers, Joypad}, utils::bit_7};
 use std::{cell::RefCell, rc::Rc};
 
 pub struct RAM {
@@ -114,26 +114,39 @@ impl BusDevice for ApuRegs {
     }
 }
 
-impl BusDevice for Joypad {
+impl BusDevice for Controllers {
     fn contains(&self, addr: u16) -> bool {
         (0x4016..=0x4017).contains(&addr)
     }
 
     fn mem_read(&mut self, addr: u16) -> u8 {
-        let data = bit_7(self.state);
-        self.state <<= 1;
+        let pad = if addr == 0x4016 {
+            &mut self.pad1
+        } else {
+            &mut self.pad2
+        };
+        let data = bit_7(pad.state);
+        pad.state <<= 1;
         data
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        self.state = self.active;
+    fn mem_write(&mut self, addr: u16, _data: u8) {
+        // $4017 writes go to the APU frame counter, not the controllers
+        if addr == 0x4016 {
+            self.pad1.state = self.pad1.active;
+            self.pad2.state = self.pad2.active;
+        }
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        self.state
+        if addr == 0x4016 {
+            self.pad1.state
+        } else {
+            self.pad2.state
+        }
     }
 
-    fn get_joypad_ref(&mut self) -> Option<&mut Joypad> {
+    fn get_controllers_ref(&mut self) -> Option<&mut Controllers> {
         Some(self)
     }
 }
@@ -232,9 +245,9 @@ pub fn memory_map(
     memory_handlers.push(Box::new(ApuRegs {
         apu_regs: [0; 0x0020],
     }));
-    memory_handlers.push(Box::new(Joypad {
-        active: 0,
-        state: 0,
+    memory_handlers.push(Box::new(Controllers {
+        pad1: Joypad { active: 0, state: 0 },
+        pad2: Joypad { active: 0, state: 0 },
     }));
     if cartridge.has_trainer || cartridge.has_sram {
         memory_handlers.push(Box::new(Sram {

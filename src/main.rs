@@ -94,7 +94,7 @@ fn main() -> Result<(), String> {
         nnes.cpu
             .borrow_mut()
             .bus
-            .get_joypad_ref()
+            .get_controllers_ref()
             .unwrap()
             .update_state(&event_pump);
 

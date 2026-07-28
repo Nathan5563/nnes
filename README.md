@@ -52,16 +52,16 @@ The executable is output to `target/release/nnes`.
 
 ### Controls
 
-| NES Button | Keyboard |
-|------------|----------|
-| D-Pad Up | W |
-| D-Pad Down | S |
-| D-Pad Left | A |
-| D-Pad Right | D |
-| A | J |
-| B | K |
-| Start | I |
-| Select | U |
+| NES Button | Player 1 | Player 2 |
+|------------|----------|----------|
+| D-Pad Up | W | Up Arrow |
+| D-Pad Down | S | Down Arrow |
+| D-Pad Left | A | Left Arrow |
+| D-Pad Right | D | Right Arrow |
+| A | J | . |
+| B | K | , |
+| Start | I | Enter |
+| Select | U | Right Shift |
 
 ## Architecture
 
