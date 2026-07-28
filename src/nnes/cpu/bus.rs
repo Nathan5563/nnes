@@ -47,6 +47,10 @@ impl Bus {
     }
 
     pub fn mem_read(&mut self, addr: u16) -> u8 {
+        // $4014 is write-only; reads return open bus
+        if addr == 0x4014 {
+            return self.open_bus;
+        }
         for handler in &mut self.memory_handlers {
             if handler.contains(addr) {
                 let v = handler.mem_read(addr);
