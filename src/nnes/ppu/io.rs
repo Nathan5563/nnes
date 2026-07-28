@@ -150,14 +150,38 @@ impl PPU {
             };
             data = (self.decayed_open_bus() & 0xC0) | (data & mask);
         }
-        self.increment_v();
+
+        // accessing PPUDATA during rendering glitch-increments v: a coarse
+        // X increment and a Y increment are triggered simultaneously
+        let rendering = self
+            .ppu_mask
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
+            && matches!(self.scanline, 0..=239 | 261);
+        if rendering {
+            self.increment_x();
+            self.increment_y();
+        } else {
+            self.increment_v();
+        }
         data
     }
 
     // 0x2007: PPUDATA - W
     fn write_ppu_data(&mut self, data: u8) {
         self.mem_write(self.v, data);
-        self.increment_v();
+
+        // accessing PPUDATA during rendering glitch-increments v: a coarse
+        // X increment and a Y increment are triggered simultaneously
+        let rendering = self
+            .ppu_mask
+            .intersects(PPUMASK::SHOW_BACKGROUND | PPUMASK::SHOW_SPRITES)
+            && matches!(self.scanline, 0..=239 | 261);
+        if rendering {
+            self.increment_x();
+            self.increment_y();
+        } else {
+            self.increment_v();
+        }
     }
 
     // Public register APIs
